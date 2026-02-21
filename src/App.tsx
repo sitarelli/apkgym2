@@ -879,51 +879,51 @@ function Dashboard({ onBack }: { onBack: () => void }) {
 
   // Calculate stats
   const now = new Date();
-  const filterDays = { "7d": 7, "30d": 30, "90d": 90, "year": 365 };
-  const cutoff = filter === "all" ? null : new Date(now - filterDays[filter] * 24 * 60 * 60 * 1000);
-  
-  const filtered = cutoff 
-    ? history.filter(w => new Date(w.date) >= cutoff)
+  const filterDays: Record<string, number> = { "7d": 7, "30d": 30, "90d": 90, "year": 365 };
+  const cutoff = filter === "all" ? null : new Date(now.getTime() - filterDays[filter] * 24 * 60 * 60 * 1000);
+
+  const filtered = cutoff
+    ? history.filter((w: WorkoutRecord) => new Date(w.date).getTime() >= cutoff!.getTime())
     : history;
 
   const totalWorkouts = filtered.length;
   const totalSets = filtered.reduce((sum: number, w: WorkoutRecord) => sum + (w.completedSets || 0), 0);
-  const avgDuration = totalWorkouts > 0 
+  const avgDuration = totalWorkouts > 0
     ? Math.round(filtered.reduce((sum: number, w: WorkoutRecord) => sum + w.duration, 0) / totalWorkouts)
     : 0;
 
   // Streak calculation
   const sortedDates = history
-    .map(w => new Date(w.date).toDateString())
-    .filter((v, i, a) => a.indexOf(v) === i)
-    .sort((a, b) => new Date(b) - new Date(a));
-  
+    .map((w: WorkoutRecord) => new Date(w.date).toDateString())
+    .filter((v: string, i: number, a: string[]) => a.indexOf(v) === i)
+    .sort((a: string, b: string) => new Date(b).getTime() - new Date(a).getTime());
+
   let streak = 0;
-  let currentDate = new Date();
-  for (let date of sortedDates) {
-    const diff = Math.floor((currentDate - new Date(date)) / (24 * 60 * 60 * 1000));
+  const currentDate = new Date();
+  for (const date of sortedDates) {
+    const diff = Math.floor((currentDate.getTime() - new Date(date).getTime()) / (24 * 60 * 60 * 1000));
     if (diff === streak) streak++;
     else break;
   }
 
   // Sessions distribution
-  const sessionCounts = filtered.reduce((acc, w) => {
-    const key = w.sessionId || "other";
+  const sessionCounts = filtered.reduce((acc: Record<string, number>, w: WorkoutRecord) => {
+    const key = String(w.sessionId || "other");
     acc[key] = (acc[key] || 0) + 1;
     return acc;
-  }, {});
+  }, {} as Record<string, number>);
 
   // Exercise frequency
-  const exerciseFreq = {};
-  filtered.forEach(w => {
+  const exerciseFreq: Record<string, number> = {};
+  filtered.forEach((w: WorkoutRecord) => {
     if (w.exercises) {
-      w.exercises.forEach(ex => {
+      w.exercises.forEach((ex: ExerciseRecord) => {
         exerciseFreq[ex.name] = (exerciseFreq[ex.name] || 0) + ex.setsCompleted;
       });
     }
   });
   const topExercises = Object.entries(exerciseFreq)
-    .sort((a, b) => b[1] - a[1])
+    .sort((a, b) => (b[1] as number) - (a[1] as number))
     .slice(0, 5);
 
   const statCards = [
