@@ -5,7 +5,13 @@ const config: CapacitorConfig = {
   appName: 'Vitto Gym Tracker',
   webDir: 'dist',
   server: {
-    androidScheme: 'https'
+    androidScheme: 'https',
+    hostname: 'app',
+    cleartext: false,
+  },
+  android: {
+    allowMixedContent: false,
+    webContentsDebuggingEnabled: false,
   },
   plugins: {
     SplashScreen: {
