@@ -842,7 +842,6 @@ function Dashboard({ onBack }: { onBack: () => void }) {
 
     if (isNative) {
       try {
-        // Dynamically import Capacitor plugins (only available in native build)
         const { Filesystem, Directory } = await import('@capacitor/filesystem');
         const { Share } = await import('@capacitor/share');
 
