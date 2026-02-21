@@ -28,7 +28,7 @@ jobs:
 
       - name: Install Capacitor
         run: |
-          npm install @capacitor/cli @capacitor/core@^8.0.0 @capacitor/android @capacitor/filesystem@^8.0.0 @capacitor/share@^8.0.0
+          npm install @capacitor/cli @capacitor/core@^8.0.0 @capacitor/android @capacitor/filesystem@^8.0.0 @capacitor/share@^8.0.0 @capacitor/local-notifications@^6.0.0
 
       - name: Create capacitor.config.json
         run: |
@@ -54,16 +54,22 @@ jobs:
           npx cap add android
           npx cap sync android
 
+      - name: Add notification permissions to AndroidManifest
+        run: |
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+          # Add POST_NOTIFICATIONS and SCHEDULE_EXACT_ALARM permissions
+          sed -i '/<uses-permission android:name="android.permission.INTERNET"/a\    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"\/>\n    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"\/>' "$MANIFEST"
+          echo "✅ Notification permissions added to AndroidManifest"
+          # Verify
+          grep -n "POST_NOTIFICATIONS\|SCHEDULE_EXACT_ALARM" "$MANIFEST"
+
       - name: Force cache invalidation on update
         run: |
-          # Inject build timestamp into Android strings so WebView cache is busted
           BUILD_TIME=$(date +%s)
           STRINGS_FILE="android/app/src/main/res/values/strings.xml"
           if [ -f "$STRINGS_FILE" ]; then
             sed -i "s|</resources>|    <string name=\"build_timestamp\">${BUILD_TIME}</string>\n</resources>|" "$STRINGS_FILE"
           fi
-          
-          # Set versionCode = timestamp-based so Android always sees a new version
           BUILD_GRADLE="android/app/build.gradle"
           VERSION_CODE=$(date +%Y%m%d%H)
           sed -i "s/versionCode [0-9]*/versionCode ${VERSION_CODE}/" "$BUILD_GRADLE"
