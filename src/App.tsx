@@ -207,6 +207,7 @@ function useStopwatch() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 const REST_TIMER_KEY = "restTimerState";
+const NOTIF_SOUND_KEY = "restTimerSound";
 
 function saveRestTimer(endTs: number, total: number): void {
   localStorage.setItem(REST_TIMER_KEY, JSON.stringify({ endTimestamp: endTs, totalSeconds: total }));
@@ -216,14 +217,95 @@ function getRestTimer(): { endTimestamp: number; totalSeconds: number } | null {
   try { const r = localStorage.getItem(REST_TIMER_KEY); return r ? JSON.parse(r) : null; } catch { return null; }
 }
 
-function fireRestNotification(): void {
+function getSoundPref(): boolean {
+  return localStorage.getItem(NOTIF_SOUND_KEY) !== "off";
+}
+function setSoundPref(on: boolean): void {
+  localStorage.setItem(NOTIF_SOUND_KEY, on ? "on" : "off");
+}
+
+// Native local notification (works with screen off on Android/iOS)
+async function scheduleRestNotification(delaySeconds: number): Promise<void> {
+  const isNative = !!(window as any).Capacitor?.isNativePlatform?.();
+  if (!isNative) {
+    // Browser fallback: web notification only (won't beep with screen off)
+    if ("Notification" in window && Notification.permission !== "denied") {
+      Notification.requestPermission();
+    }
+    return;
+  }
+  try {
+    const { LocalNotifications } = await import('@capacitor/local-notifications');
+    const perm = await LocalNotifications.requestPermissions();
+    if (perm.display !== "granted") return;
+    // Cancel any existing rest notification first
+    await LocalNotifications.cancel({ notifications: [{ id: 9999 }] });
+    await LocalNotifications.schedule({
+      notifications: [{
+        id: 9999,
+        title: "💪 Recupero completato!",
+        body: "È ora della prossima serie!",
+        schedule: { at: new Date(Date.now() + delaySeconds * 1000) },
+        sound: "beep.wav",
+        channelId: "rest-timer",
+      }]
+    });
+  } catch (e) { console.warn("LocalNotifications not available:", e); }
+}
+
+async function cancelRestNotification(): Promise<void> {
+  const isNative = !!(window as any).Capacitor?.isNativePlatform?.();
+  if (!isNative) return;
+  try {
+    const { LocalNotifications } = await import('@capacitor/local-notifications');
+    await LocalNotifications.cancel({ notifications: [{ id: 9999 }] });
+  } catch { /* ignore */ }
+}
+
+// Create notification channel on Android (call once at app start)
+async function createNotificationChannel(): Promise<void> {
+  const isNative = !!(window as any).Capacitor?.isNativePlatform?.();
+  if (!isNative) return;
+  try {
+    const { LocalNotifications } = await import('@capacitor/local-notifications');
+    await LocalNotifications.createChannel({
+      id: "rest-timer",
+      name: "Timer Recupero",
+      description: "Notifiche timer recupero allenamento",
+      importance: 4, // HIGH
+      sound: "beep.wav",
+      vibration: true,
+    });
+  } catch { /* ignore */ }
+}
+
+function fireWebNotification(): void {
   if ("Notification" in window && Notification.permission === "granted") {
     new Notification("💪 Recupero completato!", { body: "È ora della prossima serie!", tag: "rest-timer" });
   }
 }
 
+// In-app beep using Web Audio API (works when app is in foreground)
+function playBeep(): void {
+  try {
+    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const playTone = (freq: number, startTime: number, dur: number) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.frequency.value = freq; osc.type = "sine";
+      gain.gain.setValueAtTime(0.4, startTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, startTime + dur);
+      osc.start(startTime); osc.stop(startTime + dur);
+    };
+    const now = ctx.currentTime;
+    playTone(880, now, 0.15);
+    playTone(880, now + 0.2, 0.15);
+    playTone(1100, now + 0.45, 0.3);
+  } catch { /* audio not available */ }
+}
+
 function RestTimerModal({ seconds, onClose }: { seconds: number; onClose: () => void }) {
-  // Restore from persisted state if available
   const calcRemaining = (): number => {
     const state = getRestTimer();
     if (state && state.totalSeconds === seconds) {
@@ -235,28 +317,30 @@ function RestTimerModal({ seconds, onClose }: { seconds: number; onClose: () => 
 
   const [time, setTime] = useState<number>(calcRemaining);
   const [running, setRunning] = useState<boolean>(false);
-  const [notifGranted, setNotifGranted] = useState<boolean>(
-    typeof Notification !== "undefined" && Notification.permission === "granted"
-  );
+  const [soundOn, setSoundOn] = useState<boolean>(getSoundPref);
   const notifiedRef = useRef<boolean>(false);
   const ref = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // On mount: request notifications, auto-start
+  const toggleSound = () => {
+    const next = !soundOn;
+    setSoundOn(next);
+    setSoundPref(next);
+  };
+
+  // On mount: auto-start
   useEffect(() => {
-    if ("Notification" in window && Notification.permission !== "denied") {
-      Notification.requestPermission().then(r => setNotifGranted(r === "granted"));
-    }
     const state = getRestTimer();
     if (state && state.totalSeconds === seconds && state.endTimestamp > Date.now()) {
-      setRunning(true); // Restore running timer
-    } else {
-      // Fresh start — save end timestamp
-      saveRestTimer(Date.now() + seconds * 1000, seconds);
       setRunning(true);
+    } else {
+      const endTs = Date.now() + seconds * 1000;
+      saveRestTimer(endTs, seconds);
+      setRunning(true);
+      if (getSoundPref()) scheduleRestNotification(seconds);
     }
   }, []);
 
-  // Tick using wall-clock time (accurate even when throttled/background)
+  // Tick using wall-clock
   useEffect(() => {
     if (!running) { if (ref.current) clearInterval(ref.current); return; }
     ref.current = setInterval(() => {
@@ -265,21 +349,33 @@ function RestTimerModal({ seconds, onClose }: { seconds: number; onClose: () => 
       const rem = Math.ceil((state.endTimestamp - Date.now()) / 1000);
       if (rem <= 0) {
         setTime(0); setRunning(false); clearRestTimer();
-        if (!notifiedRef.current) { notifiedRef.current = true; fireRestNotification(); }
+        if (!notifiedRef.current) {
+          notifiedRef.current = true;
+          fireWebNotification();
+          if (soundOn) playBeep();
+        }
       } else { setTime(rem); }
-    }, 250); // 250ms for smooth updates
+    }, 250);
     return () => { if (ref.current) clearInterval(ref.current); };
-  }, [running]);
+  }, [running, soundOn]);
 
-  const handlePause = () => { clearRestTimer(); setRunning(false); };
+  const handlePause = () => {
+    clearRestTimer(); setRunning(false);
+    cancelRestNotification();
+  };
   const handleResume = () => {
     const t = time === 0 ? seconds : time;
     if (time === 0) setTime(seconds);
     saveRestTimer(Date.now() + t * 1000, seconds);
     notifiedRef.current = false;
     setRunning(true);
+    if (soundOn) scheduleRestNotification(t);
   };
-  const handleReset = () => { clearRestTimer(); setRunning(false); notifiedRef.current = false; setTime(seconds); };
+  const handleReset = () => {
+    clearRestTimer(); setRunning(false);
+    notifiedRef.current = false; setTime(seconds);
+    cancelRestNotification();
+  };
 
   const pct = (time / seconds) * 100;
   const C = 2 * Math.PI * 54;
@@ -289,12 +385,16 @@ function RestTimerModal({ seconds, onClose }: { seconds: number; onClose: () => 
   return (
     <div style={S.overlay} onClick={onClose}>
       <div style={S.modalCard} onClick={(e: React.MouseEvent) => e.stopPropagation()}>
-        <p style={S.modalTitle}>Recupero</p>
-        {!notifGranted && (
-          <p style={{ fontSize: 11, color: "rgba(255,200,100,0.8)", margin: "-8px 0 10px", textAlign: "center" as const }}>
-            ⚠️ Abilita le notifiche per l'allarme
-          </p>
-        )}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, marginBottom: 16 }}>
+          <p style={{ ...S.modalTitle, margin: 0 }}>Recupero</p>
+          <button onClick={toggleSound} style={{
+            ...S.sm, width: 30, height: 30,
+            background: soundOn ? "rgba(129,140,248,0.25)" : "rgba(255,255,255,0.06)",
+            border: soundOn ? "1px solid rgba(129,140,248,0.4)" : "1px solid rgba(255,255,255,0.1)",
+          }} title={soundOn ? "Suono attivo" : "Suono disattivato"}>
+            <span style={{ fontSize: 14 }}>{soundOn ? "🔔" : "🔕"}</span>
+          </button>
+        </div>
         <svg width="140" height="140" viewBox="0 0 140 140">
           <circle cx="70" cy="70" r="54" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="7" />
           <circle cx="70" cy="70" r="54" fill="none" stroke={col} strokeWidth="7" strokeLinecap="round"
@@ -312,7 +412,7 @@ function RestTimerModal({ seconds, onClose }: { seconds: number; onClose: () => 
         {done && <p style={{ color: "#34d399", fontWeight: 700, marginTop: 12, fontSize: 14 }}>✅ Recupero completato!</p>}
         {running && !done && (
           <p style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", marginTop: 10 }}>
-            Il timer continua anche a schermo spento
+            {soundOn ? "🔔 Suonerà anche a schermo spento" : "Il timer continua in background"}
           </p>
         )}
       </div>
@@ -977,6 +1077,7 @@ export default function App() {
     link.href = "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap";
     link.rel = "stylesheet"; document.head.appendChild(link);
     setHistory(getHistory());
+    createNotificationChannel();
   }, []);
 
   const refreshHistory = () => { setHistory(getHistory()); };
