@@ -28,7 +28,7 @@ jobs:
 
       - name: Install Capacitor
         run: |
-          npm install @capacitor/cli @capacitor/core @capacitor/android @capacitor/filesystem @capacitor/share
+          npm install @capacitor/cli @capacitor/core@^8.0.0 @capacitor/android @capacitor/filesystem@^8.0.0 @capacitor/share@^8.0.0
 
       - name: Create capacitor.config.json
         run: |
