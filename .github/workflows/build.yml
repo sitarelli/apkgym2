@@ -28,14 +28,14 @@ jobs:
 
       - name: Install Capacitor
         run: |
-          npm install @capacitor/cli @capacitor/core @capacitor/android
+          npm install @capacitor/cli @capacitor/core @capacitor/android @capacitor/filesystem @capacitor/share
 
       - name: Create capacitor.config.json
         run: |
           cat > capacitor.config.json << 'EOF'
           {
             "appId": "com.workouttracker.app",
-            "appName": "Vitto Gym Tracker",
+            "appName": "Workout Tracker",
             "webDir": "dist",
             "server": {
               "androidScheme": "https",
