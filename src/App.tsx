@@ -1,611 +1,271 @@
-import React, { useState, useEffect, useRef } from "react";
-import type { CSSProperties } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import {
+  Dumbbell, Flame, Timer, ChevronDown, ChevronUp,
+  RotateCcw, Play, Pause, CheckCircle2, Info, X,
+  BarChart3, ArrowLeft, Trash2, Download, Upload,
+  Database, Zap, Trophy, Clock, TrendingUp, Calendar,
+  Home, Activity, PenLine, Weight, Target, Award,
+  ChevronRight, Minus, Plus, Edit3, Save, Bell, BellOff
+} from "lucide-react";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LineChart, Line, Area, AreaChart } from "recharts";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════
+const STORAGE_KEYS = { HISTORY: "wh", REST: "rt", NOTES: "wn" };
 
-interface ExerciseRecord {
-  name: string;
-  setsCompleted: number;
-  setsTotal: number;
-  reps: string;
-}
-
-interface WorkoutRecord {
-  id: string;
-  date: string;
-  sessionId: number;
-  sessionName: string;
-  activityType?: string;
-  duration: number;
-  completed: boolean;
-  exercises: ExerciseRecord[];
-  totalSets: number;
-  completedSets: number;
-}
-
-interface Exercise {
-  name: string;
-  sets: number;
-  reps: string;
-  rest: number;
-  description: string;
-  isTime?: boolean;
-  duration?: number;
-}
-
-interface ExerciseGroup {
-  name: string;
-  icon: string;
-  exercises: Exercise[];
-}
-
-interface Activity {
-  name: string;
-  icon: string;
-  description: string;
-}
-
-interface Session {
-  id: number;
-  label: string;
-  subtitle: string;
-  color: string;
-  glow: string;
-  icon: string;
-  type: string;
-  groups?: ExerciseGroup[];
-  activities?: Activity[];
-}
+const fmt = (s) => {
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}`;
+  return `${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}`;
+};
 
 // ═══════════════════════════════════════════════════════════════════════════
-// DATA — Sessions 1-3 remain UNCHANGED
+// STORAGE — using window.storage (persistent)
 // ═══════════════════════════════════════════════════════════════════════════
+const store = {
+  async get(key) {
+    try { const r = await window.storage.get(key); return r ? JSON.parse(r.value) : null; }
+    catch { return null; }
+  },
+  async set(key, val) {
+    try { await window.storage.set(key, JSON.stringify(val)); return true; }
+    catch { return false; }
+  },
+  async del(key) {
+    try { await window.storage.delete(key); return true; }
+    catch { return false; }
+  }
+};
 
-const sessions: Session[] = [
+// ═══════════════════════════════════════════════════════════════════════════
+// DATA
+// ═══════════════════════════════════════════════════════════════════════════
+const sessions = [
   {
-    id: 1,
-    label: "Sessione 1",
-    subtitle: "Core · Petto · Tricipiti",
-    color: "#6C63FF",
-    glow: "rgba(108,99,255,0.45)",
-    icon: "💪",
-    type: "workout",
-    groups: [
-      {
-        name: "Addominali",
-        icon: "🔥",
-        exercises: [
-          {
-            name: "Leg Raiser",
-            sets: 3,
-            reps: "15",
-            rest: 60,
-            description:
-              "Sdraiati su una panca o sul pavimento con le mani sotto i glutei. Tieni le gambe tese e sollevale fino a 90°, poi abbassale lentamente senza toccare terra. Mantieni la zona lombare incollata al suolo. Respira: espira salendo, inspira scendendo.",
-          },
-          {
-            name: "Crunches",
-            sets: 3,
-            reps: "20",
-            rest: 60,
-            description:
-              "Sdraiati sulla schiena, ginocchia piegate, piedi a terra. Metti le mani dietro la testa. Stacca le spalle dal suolo contraendo il rettore addominale, senza tirare il collo. Movimento breve e controllato. Torna giù senza riposare completamente prima della prossima rep.",
-          },
-          {
-            name: "Plank",
-            sets: 3,
-            reps: "30-60 sec",
-            rest: 60,
-            isTime: true,
-            duration: 45,
-            description:
-              "Posizione prona: appoggiati sugli avambracci e sulle punte dei piedi. Il corpo forma una linea retta dalla testa ai talloni. Contrai addome, glutei e quadricipiti. Non far cadere i fianchi né alzarli. Respira in modo costante.",
-          },
-        ],
-      },
-      {
-        name: "Petto & Tricipiti",
-        icon: "🏋️",
-        exercises: [
-          {
-            name: "Cavi dall'alto",
-            sets: 4,
-            reps: "15",
-            rest: 90,
-            description:
-              "In piedi al centro del cavo-croce con le maniglie alte. Porta le braccia in avanti e in basso formando un arco, come se abbracciassi un albero. Tieni i gomiti leggermente piegati e fissi. Contrai il petto al picco, poi ritorna lentamente. Pre-affaticamento ideale per il petto.",
-          },
-          {
-            name: "Bench Press (Panca Piana)",
-            sets: 4,
-            reps: "10",
-            rest: 120,
-            description:
-              "Sdraiati sulla panca, piedi piatti a terra. Impugna il bilanciere leggermente più largo delle spalle. Scendi verso il petto (altezza capezzoli) in modo controllato, poi spingi esplosivo in su. Tieni i polsi dritti, le scapole retratte e i glutei sulla panca.",
-          },
-          {
-            name: "Pull Over Bilanciere",
-            sets: 3,
-            reps: "10",
-            rest: 90,
-            description:
-              "Sdraiati perpendicolare alla panca con solo le spalle appoggiate. Tieni il bilanciere sopra il petto con le braccia quasi tese. Abbassalo lentamente oltre la testa stirando il gran dorsale. Riporta in posizione contraendo i muscoli. Ottimo per espandere la cassa toracica.",
-          },
-          {
-            name: "French Press Manubri",
-            sets: 4,
-            reps: "12",
-            rest: 90,
-            description:
-              "Sdraiati sulla panca, tieni un manubrio in ogni mano con le braccia estese verso l'alto. Piega i gomiti abbassando i manubri verso le tempie, mantenendo i gomiti fermi e puntati verso il soffitto. Stendi le braccia tornando su. Concentrati sul tricipite lungo.",
-          },
-          {
-            name: "Tricipiti ai Cavi",
-            sets: 3,
-            reps: "15",
-            rest: 60,
-            description:
-              "In piedi davanti al cavo alto con corda o barra. Tieni i gomiti incollati ai fianchi — non si muovono. Estendi le braccia verso il basso contraendo i tricipiti, poi torna su lentamente. Piegati leggermente in avanti per isolare meglio il muscolo.",
-          },
-        ],
-      },
-    ],
+    id:1, label:"Sessione 1", subtitle:"Core · Petto · Tricipiti", color:"#818cf8", glow:"rgba(129,140,248,0.35)", icon:"💪", type:"workout",
+    groups:[
+      { name:"Addominali", icon:"🔥", exercises:[
+        { name:"Leg Raiser", sets:3, reps:"15", rest:60, description:"Sdraiati su panca/pavimento, mani sotto i glutei. Gambe tese, solleva a 90° e abbassa lentamente. Lombare a terra." },
+        { name:"Crunches", sets:3, reps:"20", rest:60, description:"Schiena a terra, ginocchia piegate. Stacca spalle dal suolo contraendo il retto. Movimento breve e controllato." },
+        { name:"Plank", sets:3, reps:"30-60s", rest:60, isTime:true, duration:45, description:"Avambracci e punte dei piedi. Corpo in linea retta. Contrai addome, glutei e quadricipiti." },
+      ]},
+      { name:"Petto & Tricipiti", icon:"🏋️", exercises:[
+        { name:"Cavi dall'alto", sets:4, reps:"15", rest:90, description:"Cavo-croce maniglie alte. Braccia in arco avanti-basso. Gomiti fissi, contrai petto al picco." },
+        { name:"Bench Press", sets:4, reps:"10", rest:120, description:"Panca piana, impugnatura oltre le spalle. Scendi al petto controllato, spingi esplosivo. Scapole retratte." },
+        { name:"Pull Over Bilanciere", sets:3, reps:"10", rest:90, description:"Perpendicolare alla panca, spalle appoggiate. Bilanciere sopra il petto, abbassa oltre la testa stirando dorsale." },
+        { name:"French Press Manubri", sets:4, reps:"12", rest:90, description:"Panca, manubri sopra con braccia estese. Piega gomiti verso tempie, gomiti fermi verso il soffitto." },
+        { name:"Tricipiti ai Cavi", sets:3, reps:"15", rest:60, description:"Cavo alto, gomiti ai fianchi fissi. Estendi braccia verso il basso, torna su lentamente." },
+      ]},
+    ]
   },
   {
-    id: 2,
-    label: "Sessione 2",
-    subtitle: "Core · Gambe · Spalle",
-    color: "#FF6B6B",
-    glow: "rgba(255,107,107,0.45)",
-    icon: "🦵",
-    type: "workout",
-    groups: [
-      {
-        name: "Addome",
-        icon: "🔥",
-        exercises: [
-          {
-            name: "Rotary Torso",
-            sets: 3,
-            reps: "15",
-            rest: 60,
-            description:
-              "Seduto sul macchinario Rotary Torso, busto bloccato, braccia incrociate sul petto. Ruota il torso da un lato all'altro contraendo gli obliqui. Esegui tutte le rip. per un lato, poi cambia. Movimento lento, evita gli scatti. Fondamentale per rinforzare gli obliqui.",
-          },
-        ],
-      },
-      {
-        name: "Gambe",
-        icon: "🦵",
-        exercises: [
-          {
-            name: "Leg Press",
-            sets: 4,
-            reps: "15-12-10-8",
-            rest: 120,
-            description:
-              "Siediti sul macchinario con i piedi alla larghezza delle spalle. Abbassa la piattaforma piegando le ginocchia fino a ~90° senza che superino le punte dei piedi. Spingi esplosivamente verso l'alto senza bloccare le ginocchia. Peso crescente ogni serie (piramidale).",
-          },
-          {
-            name: "Affondi in camminata",
-            sets: 3,
-            reps: "10+10",
-            rest: 90,
-            description:
-              "In piedi con i manubri ai lati. Fai un passo avanti lungo e scendi col ginocchio posteriore verso terra. Il ginocchio anteriore non deve superare la punta del piede. Spingiti avanti col piede anteriore. 10 rip. per gamba. Mantieni busto eretto e core contratto.",
-          },
-        ],
-      },
-      {
-        name: "Cardio",
-        icon: "🚴",
-        exercises: [
-          {
-            name: "Cyclette",
-            sets: 1,
-            reps: "10 min",
-            rest: 0,
-            isTime: true,
-            duration: 600,
-            description:
-              "10 minuti di cyclette a intensità moderata. Mantieni un ritmo costante (RPM 70-90). Imposta una resistenza che ti faccia lavorare senza essere troppo affannato. Migliora la circolazione e favorisce il recupero attivo tra gambe e spalle.",
-          },
-        ],
-      },
-      {
-        name: "Spalle",
-        icon: "🏋️",
-        exercises: [
-          {
-            name: "Croci a 90°",
-            sets: 4,
-            reps: "12",
-            rest: 90,
-            description:
-              "In piedi o seduto, con i manubri ai lati. Solleva le braccia lateralmente fino all'altezza delle spalle (90°), gomiti leggermente flessi. Al picco i palmi guardano verso il basso. Abbassa lentamente senza dondolare il busto. Isola il deltoide medio. Peso leggero, tecnica perfetta.",
-          },
-          {
-            name: "Shoulder Press",
-            sets: 4,
-            reps: "15-12-10-8",
-            rest: 120,
-            description:
-              "Seduto su una panca con schienale, tieni i manubri all'altezza delle orecchie con i gomiti a 90°. Spingi verso l'alto fino quasi all'estensione completa, poi torna giù lentamente. Peso crescente ogni serie. Coinvolge deltoide anteriore e medio, oltre al tricipite.",
-          },
-        ],
-      },
-    ],
+    id:2, label:"Sessione 2", subtitle:"Core · Gambe · Spalle", color:"#fb7185", glow:"rgba(251,113,133,0.35)", icon:"🦵", type:"workout",
+    groups:[
+      { name:"Addome", icon:"🔥", exercises:[
+        { name:"Rotary Torso", sets:3, reps:"15", rest:60, description:"Seduto, busto bloccato. Ruota il torso contraendo obliqui. Un lato alla volta, movimento lento." },
+      ]},
+      { name:"Gambe", icon:"🦵", exercises:[
+        { name:"Leg Press", sets:4, reps:"15-12-10-8", rest:120, description:"Piedi larghezza spalle, scendi a ~90°. Spingi esplosivo senza bloccare ginocchia. Piramidale." },
+        { name:"Affondi in camminata", sets:3, reps:"10+10", rest:90, description:"Manubri ai lati, passo lungo. Ginocchio posteriore verso terra. 10 per gamba, busto eretto." },
+      ]},
+      { name:"Cardio", icon:"🚴", exercises:[
+        { name:"Cyclette", sets:1, reps:"10 min", rest:0, isTime:true, duration:600, description:"10 min intensità moderata, RPM 70-90. Recupero attivo." },
+      ]},
+      { name:"Spalle", icon:"🏋️", exercises:[
+        { name:"Croci a 90°", sets:4, reps:"12", rest:90, description:"Manubri ai lati, braccia laterali a 90°. Gomiti flessi, palmi in basso al picco. Peso leggero, tecnica perfetta." },
+        { name:"Shoulder Press", sets:4, reps:"15-12-10-8", rest:120, description:"Panca con schienale, manubri altezza orecchie. Spingi su, torna giù lento. Piramidale." },
+      ]},
+    ]
   },
   {
-    id: 3,
-    label: "Sessione 3",
-    subtitle: "Lombare · Dorso · Bicipiti",
-    color: "#00D4AA",
-    glow: "rgba(0,212,170,0.45)",
-    icon: "🦾",
-    type: "workout",
-    groups: [
-      {
-        name: "Addome / Lombare",
-        icon: "🔥",
-        exercises: [
-          {
-            name: "Hyperextension",
-            sets: 3,
-            reps: "15",
-            rest: 60,
-            description:
-              "Sul macchinario per l'iperestensione, posizionati con le anche sul cuscinetto e i piedi bloccati. Mani incrociate sul petto. Scendi piegando il busto verso il basso, poi risali contraendo i lombari fino a essere in linea retta (non oltre). Rinforza erettori spinali, glutei, ischio-crurali.",
-          },
-        ],
-      },
-      {
-        name: "Dorso",
-        icon: "🔙",
-        exercises: [
-          {
-            name: "Row Presa Stretta",
-            sets: 4,
-            reps: "8",
-            rest: 120,
-            description:
-              "Al cavo basso con presa prona stretta. Tira verso l'ombelico mantenendo i gomiti vicini ai fianchi. Contrai le scapole al centro alla fine del movimento. La schiena rimane dritta. Torna avanti con controllo senza perdere la tensione. Colpisce gran dorsale e romboidi.",
-          },
-          {
-            name: "Row Presa Larga",
-            sets: 2,
-            reps: "18",
-            rest: 90,
-            description:
-              "Stessa esecuzione del Row ma con presa larga. I gomiti si aprono verso l'esterno, coinvolgendo il deltoide posteriore e le fibre superiori del dorsale. Volume alto (18 rep) per il pump e la resistenza. Usa un peso più leggero rispetto alla presa stretta.",
-          },
-          {
-            name: "Lat Avanti",
-            sets: 4,
-            reps: "15-12-10-8",
-            rest: 120,
-            description:
-              "Alla lat machine, impugna la sbarra larga. Tirala verso il petto (non alla nuca) con un lieve arco lombare e il petto aperto verso l'alto. I gomiti puntano verso il pavimento e le scapole si abbassano. Risali lentamente. Serie piramidale: aumenta il carico ogni set.",
-          },
-        ],
-      },
-      {
-        name: "Bicipiti",
-        icon: "💪",
-        exercises: [
-          {
-            name: "Curl Cavo Basso",
-            sets: 4,
-            reps: "10",
-            rest: 90,
-            description:
-              "Al cavo basso con barra diritta o corda. Gomiti ai fianchi fissi, fletti le braccia portando la barra verso le spalle. La tensione del cavo mantiene il muscolo sotto stress anche nella posizione bassa. Torna giù lentamente senza dondolare il busto.",
-          },
-          {
-            name: "Curl Manubri",
-            sets: 3,
-            reps: "8+8",
-            rest: 90,
-            description:
-              "In piedi o seduto, con un manubrio in ogni mano. Esegui il curl alternato: fletti un braccio ruotando il polso verso l'esterno (supinazione) al picco. 8 rip. per braccio. Tieni il gomito fermo senza portarlo avanti durante il curl. Movimento lento e controllato.",
-          },
-        ],
-      },
-    ],
+    id:3, label:"Sessione 3", subtitle:"Lombare · Dorso · Bicipiti", color:"#34d399", glow:"rgba(52,211,153,0.35)", icon:"🦾", type:"workout",
+    groups:[
+      { name:"Addome / Lombare", icon:"🔥", exercises:[
+        { name:"Hyperextension", sets:3, reps:"15", rest:60, description:"Iperestensione: anche sul cuscinetto, piedi bloccati. Scendi e risali contraendo lombari fino alla linea retta." },
+      ]},
+      { name:"Dorso", icon:"🔙", exercises:[
+        { name:"Row Presa Stretta", sets:4, reps:"8", rest:120, description:"Cavo basso presa prona stretta. Tira verso ombelico, gomiti ai fianchi, scapole al centro." },
+        { name:"Row Presa Larga", sets:2, reps:"18", rest:90, description:"Presa larga, gomiti verso l'esterno. Deltoide posteriore e fibre superiori dorsale. Volume alto." },
+        { name:"Lat Avanti", sets:4, reps:"15-12-10-8", rest:120, description:"Lat machine sbarra larga, tira al petto. Gomiti verso il pavimento, scapole abbassate. Piramidale." },
+      ]},
+      { name:"Bicipiti", icon:"💪", exercises:[
+        { name:"Curl Cavo Basso", sets:4, reps:"10", rest:90, description:"Cavo basso barra dritta. Gomiti fissi, fletti verso spalle. Tensione costante anche in basso." },
+        { name:"Curl Manubri", sets:3, reps:"8+8", rest:90, description:"Curl alternato con supinazione al picco. 8 per braccio, gomito fermo, movimento lento." },
+      ]},
+    ]
   },
   {
-    id: 4,
-    label: "Attività Extra",
-    subtitle: "Gravel Bike · Passeggiata",
-    color: "#FFA500",
-    glow: "rgba(255,165,0,0.45)",
-    icon: "🚴",
-    type: "extra",
-    activities: [
-      {
-        name: "Gravel Bike",
-        icon: "🚵",
-        description: "Sessione di ciclismo su gravel. Avvia il timer e registra la durata della tua uscita.",
-      },
-      {
-        name: "Passeggiata",
-        icon: "🚶",
-        description: "Camminata all'aperto. Avvia il timer per tracciare la durata dell'attività.",
-      },
-    ],
+    id:4, label:"Attività Extra", subtitle:"Gravel · Passeggiata", color:"#fbbf24", glow:"rgba(251,191,36,0.35)", icon:"🚴", type:"extra",
+    activities:[
+      { name:"Gravel Bike", icon:"🚵", description:"Sessione ciclismo su gravel. Avvia il timer." },
+      { name:"Passeggiata", icon:"🚶", description:"Camminata all'aperto. Traccia la durata." },
+    ]
   },
 ];
 
 // ═══════════════════════════════════════════════════════════════════════════
-// UTILITY FUNCTIONS
+// HOOKS
 // ═══════════════════════════════════════════════════════════════════════════
-
-function useTimer(initialSeconds: number) {
-  const [time, setTime] = useState<number>(initialSeconds);
-  const [running, setRunning] = useState<boolean>(false);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  useEffect(() => {
-    if (running && time > 0) {
-      intervalRef.current = setInterval(() => setTime((t: number) => t - 1), 1000);
-    } else if (time === 0) setRunning(false);
-    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
-  }, [running, time]);
-  return {
-    time,
-    running,
-    start: () => setRunning(true),
-    pause: () => setRunning(false),
-    reset: () => { setRunning(false); setTime(initialSeconds); },
-  };
-}
-
-// Persistent rest timer that keeps counting even when app is in background
-const REST_TIMER_KEY = "restTimerState";
-
-function saveRestTimerState(endTimestamp: number, totalSeconds: number): void {
-  localStorage.setItem(REST_TIMER_KEY, JSON.stringify({ endTimestamp, totalSeconds }));
-}
-
-function clearRestTimerState(): void {
-  localStorage.removeItem(REST_TIMER_KEY);
-}
-
-function getRestTimerState(): { endTimestamp: number; totalSeconds: number } | null {
-  try {
-    const raw = localStorage.getItem(REST_TIMER_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch { return null; }
-}
-
-async function requestNotificationPermission(): Promise<boolean> {
-  if (!("Notification" in window)) return false;
-  if (Notification.permission === "granted") return true;
-  if (Notification.permission === "denied") return false;
-  const result = await Notification.requestPermission();
-  return result === "granted";
-}
-
-function fireRestNotification(): void {
-  if ("Notification" in window && Notification.permission === "granted") {
-    new Notification("💪 Recupero completato!", {
-      body: "È ora di iniziare la prossima serie!",
-      icon: "/icon.png",
-      badge: "/icon.png",
-      tag: "rest-timer",
-    });
-  }
-}
-
-function fmt(s: number): string {
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const sec = s % 60;
-  if (h > 0) return `${h}:${m.toString().padStart(2, "0")}:${sec.toString().padStart(2, "0")}`;
-  return `${m.toString().padStart(2, "0")}:${sec.toString().padStart(2, "0")}`;
-}
-
-function getWorkoutHistory(): WorkoutRecord[] {
-  const stored = localStorage.getItem("workoutHistory");
-  return stored ? JSON.parse(stored) : [];
-}
-
-function saveWorkout(workout: WorkoutRecord): void {
-  const history = getWorkoutHistory();
-  history.push(workout);
-  localStorage.setItem("workoutHistory", JSON.stringify(history));
-}
-
-function deleteWorkout(id: string): void {
-  const history = getWorkoutHistory().filter((w: WorkoutRecord) => w.id !== id);
-  localStorage.setItem("workoutHistory", JSON.stringify(history));
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// COMPONENTS — Modals & Timers
-// ═══════════════════════════════════════════════════════════════════════════
-
-function RestTimerModal({ seconds, onClose }: { seconds: number; onClose: () => void }) {
-  // Calculate initial remaining time from persisted state (background-aware)
-  const calcRemaining = () => {
-    const state = getRestTimerState();
-    if (state && state.totalSeconds === seconds) {
-      const remaining = Math.ceil((state.endTimestamp - Date.now()) / 1000);
-      return Math.max(0, remaining);
-    }
-    return seconds;
-  };
-
-  const [time, setTime] = useState(calcRemaining);
+function useTimer(init) {
+  const [time, setTime] = useState(init);
   const [running, setRunning] = useState(false);
-  const [notifGranted, setNotifGranted] = useState(
-    typeof Notification !== "undefined" && Notification.permission === "granted"
-  );
-  const notifiedRef = useRef<boolean>(false);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  // On mount: request notifications, start timer, restore state if any
+  const ref = useRef(null);
   useEffect(() => {
-    requestNotificationPermission().then(granted => setNotifGranted(granted));
-    // If there's a persisted timer running, restore it
-    const state = getRestTimerState();
-    if (state && state.totalSeconds === seconds && state.endTimestamp > Date.now()) {
-      setRunning(true);
-    } else {
-      // Fresh start
-      const endTs = Date.now() + seconds * 1000;
-      saveRestTimerState(endTs, seconds);
-      setRunning(true);
-    }
-  }, []);
+    if (running && time > 0) ref.current = setInterval(() => setTime(t => t - 1), 1000);
+    else if (time === 0) setRunning(false);
+    return () => { if (ref.current) clearInterval(ref.current); };
+  }, [running, time]);
+  return { time, running, start: () => setRunning(true), pause: () => setRunning(false), reset: () => { setRunning(false); setTime(init); } };
+}
 
-  // Tick every 250ms using wall-clock time for accuracy even when throttled
+function useStopwatch() {
+  const [elapsed, setElapsed] = useState(0);
+  const [running, setRunning] = useState(false);
+  const ref = useRef(null);
   useEffect(() => {
-    if (!running) { if(intervalRef.current) clearInterval(intervalRef.current); return; }
-    intervalRef.current = setInterval(() => {
-      const state = getRestTimerState();
-      if (!state) { setRunning(false); return; }
-      const remaining = Math.ceil((state.endTimestamp - Date.now()) / 1000);
-      if (remaining <= 0) {
-        setTime(0);
-        setRunning(false);
-        clearRestTimerState();
-        if (!notifiedRef.current) { notifiedRef.current = true; fireRestNotification(); }
-      } else {
-        setTime(remaining);
-      }
-    }, 250);
-    return () => { if(intervalRef.current) clearInterval(intervalRef.current); };
+    if (running) ref.current = setInterval(() => setElapsed(e => e + 1), 1000);
+    else { if (ref.current) clearInterval(ref.current); }
+    return () => { if (ref.current) clearInterval(ref.current); };
   }, [running]);
+  return { elapsed, running, setRunning, reset: () => { setRunning(false); setElapsed(0); } };
+}
 
-  const handlePause = () => {
-    clearRestTimerState();
-    setRunning(false);
-  };
-
-  const handleResume = () => {
-    const endTs = Date.now() + time * 1000;
-    saveRestTimerState(endTs, seconds);
-    notifiedRef.current = false;
-    setRunning(true);
-  };
-
-  const handleReset = () => {
-    clearRestTimerState();
-    setRunning(false);
-    notifiedRef.current = false;
-    setTime(seconds);
-  };
-
-  const handleClose = () => {
-    // Keep timer state in localStorage so it keeps running in background
-    onClose();
-  };
+// ═══════════════════════════════════════════════════════════════════════════
+// REST TIMER MODAL
+// ═══════════════════════════════════════════════════════════════════════════
+function RestTimerModal({ seconds, onClose }) {
+  const [time, setTime] = useState(seconds);
+  const [running, setRunning] = useState(true);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (running && time > 0) ref.current = setInterval(() => setTime(t => t - 1), 1000);
+    else if (time === 0) setRunning(false);
+    return () => { if (ref.current) clearInterval(ref.current); };
+  }, [running, time]);
 
   const pct = (time / seconds) * 100;
   const C = 2 * Math.PI * 54;
-  const isExpired = time === 0;
+  const done = time === 0;
+  const col = done ? "#34d399" : time <= 10 ? "#fb7185" : "#818cf8";
 
   return (
-    <div style={S.overlay} onClick={handleClose}>
-      <div style={S.modalCard} onClick={(e) => e.stopPropagation()}>
-        <p style={S.modalTitle}>⏱ Recupero</p>
-        {!notifGranted && (
-          <p style={{fontSize:"11px",color:"rgba(255,200,100,0.8)",margin:"-8px 0 10px",textAlign:"center"}}>
-            ⚠️ Abilita le notifiche per l'allarme
-          </p>
-        )}
-        <svg width="130" height="130" viewBox="0 0 130 130">
-          <circle cx="65" cy="65" r="54" fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="8" />
-          <circle cx="65" cy="65" r="54" fill="none"
-            stroke={isExpired ? "#00D4AA" : time <= 10 ? "#FF6B6B" : "#6C63FF"} strokeWidth="8" strokeLinecap="round"
-            strokeDasharray={C} strokeDashoffset={C * (1 - pct / 100)}
-            transform="rotate(-90 65 65)"
-            style={{ transition: "stroke-dashoffset 0.25s linear, stroke 0.3s" }} />
-          <text x="65" y="70" textAnchor="middle" fill="white" fontSize="26" fontWeight="700" fontFamily="monospace">
-            {fmt(time)}
-          </text>
+    <div style={S.overlay} onClick={onClose}>
+      <div style={S.modalCard} onClick={e => e.stopPropagation()}>
+        <p style={S.modalTitle}>Recupero</p>
+        <svg width="140" height="140" viewBox="0 0 140 140">
+          <circle cx="70" cy="70" r="54" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="7"/>
+          <circle cx="70" cy="70" r="54" fill="none" stroke={col} strokeWidth="7" strokeLinecap="round"
+            strokeDasharray={C} strokeDashoffset={C*(1-pct/100)} transform="rotate(-90 70 70)"
+            style={{transition:"stroke-dashoffset 0.3s linear, stroke 0.3s"}}/>
+          <text x="70" y="76" textAnchor="middle" fill="white" fontSize="28" fontWeight="700" fontFamily="monospace">{fmt(time)}</text>
         </svg>
-        <div style={S.row}>
+        <div style={{display:"flex",gap:"8px",justifyContent:"center",marginTop:"16px"}}>
           {running
-            ? <button style={{...S.btn, background:"rgba(255,255,255,0.15)"}} onClick={handlePause}>⏸ Pausa</button>
-            : <button style={{...S.btn, background:"rgba(108,99,255,0.6)"}} onClick={handleResume}>▶ {isExpired ? "Nuovo" : "Riprendi"}</button>}
-          <button style={{...S.btn, background:"rgba(255,107,107,0.4)"}} onClick={handleReset}>↺</button>
-          <button style={{...S.btn, background:"rgba(255,255,255,0.08)"}} onClick={handleClose}>✕ Chiudi</button>
+            ? <Btn bg="rgba(255,255,255,0.08)" onClick={()=>setRunning(false)}><Pause size={14}/> Pausa</Btn>
+            : <Btn bg={`${col}55`} onClick={()=>{if(done){setTime(seconds)}setRunning(true)}}><Play size={14}/> {done?"Nuovo":"Riprendi"}</Btn>}
+          <Btn bg="rgba(255,255,255,0.06)" onClick={()=>{setRunning(false);setTime(seconds)}}><RotateCcw size={14}/></Btn>
+          <Btn bg="rgba(255,255,255,0.04)" onClick={onClose}><X size={14}/></Btn>
         </div>
-        {isExpired && (
-          <p style={{color:"#00D4AA",fontWeight:"700",marginTop:"10px",animation:"pulse 1s infinite"}}>
-            ✅ Recupero completato!
-          </p>
-        )}
-        {running && !isExpired && (
-          <p style={{fontSize:"11px",color:"rgba(255,255,255,0.4)",marginTop:"10px"}}>
-            Il timer continua anche se chiudi questa finestra
-          </p>
-        )}
+        {done && <p style={{color:"#34d399",fontWeight:700,marginTop:12,fontSize:14}}>✅ Recupero completato!</p>}
       </div>
     </div>
   );
 }
 
-function ExTimer({ duration }: { duration: number }) {
+// ═══════════════════════════════════════════════════════════════════════════
+// SMALL COMPONENTS
+// ═══════════════════════════════════════════════════════════════════════════
+function Btn({ children, bg = "rgba(255,255,255,0.08)", style: sx, ...rest }) {
+  return <button style={{...S.btn, background: bg, ...sx}} {...rest}>{children}</button>;
+}
+
+function ExTimer({ duration }) {
   const { time, running, start, pause, reset } = useTimer(duration);
   const pct = (time / duration) * 100;
-  const col = time <= 10 ? "#FF6B6B" : "#00D4AA";
+  const col = time <= 10 ? "#fb7185" : "#34d399";
   return (
     <div style={S.exTimer}>
-      <div style={{...S.timerBar, width:`${pct}%`, background:col}} />
+      <div style={{...S.timerBar, width:`${pct}%`, background:col}}/>
       <span style={S.timerTxt}>{fmt(time)}</span>
-      <div style={{display:"flex",gap:"6px",marginLeft:"auto",position:"relative",zIndex:1}}>
+      <div style={{display:"flex",gap:6,marginLeft:"auto",position:"relative",zIndex:1}}>
         {running
-          ? <button style={S.sm} onClick={pause}>⏸</button>
-          : <button style={{...S.sm, background:"rgba(0,212,170,0.4)"}} onClick={start}>▶</button>}
-        <button style={{...S.sm, background:"rgba(255,107,107,0.3)"}} onClick={reset}>↺</button>
+          ? <button style={S.sm} onClick={pause}><Pause size={14}/></button>
+          : <button style={{...S.sm,background:"rgba(52,211,153,0.25)"}} onClick={start}><Play size={14}/></button>}
+        <button style={{...S.sm,background:"rgba(251,113,133,0.2)"}} onClick={reset}><RotateCcw size={13}/></button>
       </div>
     </div>
   );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// WORKOUT SESSION COMPONENTS
-// ═══════════════════════════════════════════════════════════════════════════
+// Note input per serie
+function SetNoteInput({ value, onChange }) {
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState(value || "");
+  const inputRef = useRef(null);
+  useEffect(() => { if (editing && inputRef.current) inputRef.current.focus(); }, [editing]);
+  if (!editing) {
+    return (
+      <button onClick={() => setEditing(true)} style={{...S.noteBtn, color: value ? "#fbbf24" : "rgba(255,255,255,0.25)"}}>
+        {value ? <span style={{fontSize:11}}>{value}</span> : <PenLine size={11}/>}
+      </button>
+    );
+  }
+  return (
+    <div style={{display:"flex",gap:4,alignItems:"center"}}>
+      <input ref={inputRef} value={val} onChange={e=>setVal(e.target.value)}
+        placeholder="kg / note"
+        onKeyDown={e=>{if(e.key==="Enter"){onChange(val);setEditing(false)}}}
+        style={S.noteInput}/>
+      <button style={{...S.sm,width:26,height:26,background:"rgba(52,211,153,0.2)"}}
+        onClick={()=>{onChange(val);setEditing(false)}}><Save size={11}/></button>
+    </div>
+  );
+}
 
-function ExCard({ ex, color, done, onSet }: { ex: Exercise; color: string; done: number; onSet: (i: number) => void }) {
+// ═══════════════════════════════════════════════════════════════════════════
+// EXERCISE CARD
+// ═══════════════════════════════════════════════════════════════════════════
+function ExCard({ ex, color, done, onSet, notes, onNote }) {
   const [open, setOpen] = useState(false);
   const [showRest, setShowRest] = useState(false);
   return (
     <>
-      {showRest && <RestTimerModal seconds={ex.rest||90} onClose={()=>setShowRest(false)} />}
-      <div style={{...S.card, borderColor:`${color}44`}}>
+      {showRest && <RestTimerModal seconds={ex.rest||90} onClose={()=>setShowRest(false)}/>}
+      <div style={{...S.card, borderColor:`${color}30`}}>
         <div style={S.cardHead}>
           <div style={{flex:1}}>
             <p style={S.exName}>{ex.name}</p>
-            <p style={S.exMeta}>{ex.sets} serie · {ex.reps} rip.{ex.rest>0?` · rec.${ex.rest}s`:""}</p>
+            <p style={S.exMeta}>{ex.sets}×{ex.reps}{ex.rest > 0 ? ` · ${ex.rest}s rec` : ""}</p>
           </div>
-          <button style={{...S.infoBtn, borderColor:`${color}66`, color}} onClick={()=>setOpen(!open)}>
-            {open?"✕":"ℹ"}
+          <button style={{...S.infoBtn, borderColor:`${color}30`, color}} onClick={()=>setOpen(!open)}>
+            {open ? <ChevronUp size={14}/> : <Info size={14}/>}
           </button>
         </div>
         {open && (
-          <div style={{...S.desc, borderColor:`${color}33`}}>
+          <div style={{...S.desc, borderColor:`${color}20`}}>
             <p style={S.descTxt}>{ex.description}</p>
           </div>
         )}
-        {ex.isTime && ex.duration && <ExTimer duration={ex.duration} />}
+        {ex.isTime && ex.duration && <ExTimer duration={ex.duration}/>}
         <div style={S.sets}>
           {Array.from({length:ex.sets}).map((_,i)=>(
-            <button key={i}
-              style={{...S.dot, background:done>i?color:"rgba(255,255,255,0.08)",
-                borderColor:done>i?color:"rgba(255,255,255,0.2)",
-                boxShadow:done>i?`0 0 10px ${color}88`:"none"}}
-              onClick={()=>onSet(i)}>
-              {done>i?"✓":i+1}
-            </button>
+            <div key={i} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
+              <button
+                style={{...S.dot,
+                  background:done>i?color:"rgba(255,255,255,0.04)",
+                  borderColor:done>i?color:"rgba(255,255,255,0.1)",
+                  boxShadow:done>i?`0 0 12px ${color}44`:"none",
+                  transform:done>i?"scale(1.05)":"scale(1)"}}
+                onClick={()=>onSet(i)}>
+                {done>i ? <CheckCircle2 size={16}/> : <span style={{fontSize:11,opacity:0.5}}>{i+1}</span>}
+              </button>
+              <SetNoteInput value={notes?.[i]||""} onChange={v=>onNote(i,v)}/>
+            </div>
           ))}
           {ex.rest>0&&(
-            <button style={{...S.restBtn, borderColor:`${color}55`, color}} onClick={()=>setShowRest(true)}>
-              ⏱ Recupero
+            <button style={{...S.restBtn, borderColor:`${color}30`, color}} onClick={()=>setShowRest(true)}>
+              <Timer size={12}/> Rec
             </button>
           )}
         </div>
@@ -614,204 +274,230 @@ function ExCard({ ex, color, done, onSet }: { ex: Exercise; color: string; done:
   );
 }
 
-function Group({ group, color, completedSets, onSetComplete }: { group: ExerciseGroup; color: string; completedSets: number[]; onSetComplete: (exIdx: number, setIdx: number) => void }) {
+function Group({ group, color, completedSets, onSetComplete, notes, onNote }) {
   return (
-    <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
-      <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"2px"}}>
-        <span style={{fontSize:"20px"}}>{group.icon}</span>
-        <span style={{fontSize:"16px",fontWeight:"700",color}}>{group.name}</span>
+    <div style={{display:"flex",flexDirection:"column",gap:10}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:2}}>
+        <span style={{fontSize:18}}>{group.icon}</span>
+        <span style={{fontSize:14,fontWeight:700,color,letterSpacing:"-0.01em"}}>{group.name}</span>
+        <div style={{flex:1,height:1,background:`${color}15`}}/>
       </div>
       {group.exercises.map((ex,i)=>(
         <ExCard key={ex.name} ex={ex} color={color} done={completedSets[i]}
-          onSet={si=>onSetComplete(i, si)} />
+          onSet={si=>onSetComplete(i,si)} notes={notes?.[i]} onNote={(si,v)=>onNote(i,si,v)}/>
       ))}
     </div>
   );
 }
 
-function WorkoutSession({ session, onFinish }: { session: Session; onFinish: () => void }) {
-  const [elapsed, setElapsed] = useState(0);
-  const [running, setRunning] = useState(false);
+// ═══════════════════════════════════════════════════════════════════════════
+// WORKOUT SESSION
+// ═══════════════════════════════════════════════════════════════════════════
+function WorkoutSession({ session, onFinish, history }) {
+  const { elapsed, running, setRunning, reset } = useStopwatch();
   const [completedSets, setCompletedSets] = useState(
-    () => (session.groups ?? []).map(g => g.exercises.map(() => 0))
+    () => (session.groups??[]).map(g => g.exercises.map(() => 0))
   );
-  const ref = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [notes, setNotes] = useState(
+    () => (session.groups??[]).map(g => g.exercises.map(ex => Array(ex.sets).fill("")))
+  );
 
-  useEffect(()=>{
-    if(running) ref.current=setInterval(()=>setElapsed((e: number)=>e+1),1000);
-    else { if(ref.current) clearInterval(ref.current); }
-    return ()=>{ if(ref.current) clearInterval(ref.current); };
-  },[running]);
-
-  const handleSetComplete = (groupIdx: number, exIdx: number, setIdx: number) => {
+  const handleSet = (gIdx, eIdx, sIdx) => {
     setCompletedSets(prev => {
-      const next = prev.map(g => [...g]);
-      const current = next[groupIdx][exIdx];
-      next[groupIdx][exIdx] = current >= setIdx + 1 ? setIdx : setIdx + 1;
+      const next = prev.map(g=>[...g]);
+      next[gIdx][eIdx] = next[gIdx][eIdx] >= sIdx+1 ? sIdx : sIdx+1;
       return next;
     });
   };
 
-  const handleFinish = () => {
-    const exercises: ExerciseRecord[] = [];
-    (session.groups ?? []).forEach((group, gIdx) => {
-      group.exercises.forEach((ex, eIdx) => {
+  const handleNote = (gIdx, eIdx, sIdx, val) => {
+    setNotes(prev => {
+      const next = prev.map(g => g.map(e => [...e]));
+      next[gIdx][eIdx][sIdx] = val;
+      return next;
+    });
+  };
+
+  const totalSets = (session.groups??[]).reduce((s,g)=>s+g.exercises.reduce((s2,e)=>s2+e.sets,0),0);
+  const doneSets = completedSets.reduce((s,g)=>s+g.reduce((s2,v)=>s2+v,0),0);
+  const pct = totalSets > 0 ? Math.round(doneSets/totalSets*100) : 0;
+
+  const handleFinish = async () => {
+    const exercises = [];
+    (session.groups??[]).forEach((group,gIdx) => {
+      group.exercises.forEach((ex,eIdx) => {
         exercises.push({
-          name: ex.name,
-          setsCompleted: completedSets[gIdx][eIdx],
-          setsTotal: ex.sets,
-          reps: ex.reps,
+          name:ex.name, setsCompleted:completedSets[gIdx][eIdx],
+          setsTotal:ex.sets, reps:ex.reps,
+          notes: notes[gIdx][eIdx].filter(Boolean)
         });
       });
     });
-
-    const totalSets = exercises.reduce((sum: number, ex: ExerciseRecord) => sum + ex.setsTotal, 0);
-    const doneSets = exercises.reduce((sum: number, ex: ExerciseRecord) => sum + ex.setsCompleted, 0);
-
     const workout = {
-      id: Date.now().toString(),
-      date: new Date().toISOString(),
-      sessionId: session.id,
-      sessionName: session.label,
-      duration: elapsed,
-      completed: true,
-      exercises,
-      totalSets,
-      completedSets: doneSets,
+      id: Date.now().toString(), date: new Date().toISOString(),
+      sessionId: session.id, sessionName: session.label,
+      duration: elapsed, completed: true,
+      exercises, totalSets, completedSets: doneSets
     };
-
-    saveWorkout(workout);
+    const prev = await store.get(STORAGE_KEYS.HISTORY) || [];
+    prev.push(workout);
+    await store.set(STORAGE_KEYS.HISTORY, prev);
     onFinish();
   };
 
   return (
-    <div style={{display:"flex",flexDirection:"column",gap:"20px"}}>
-      <div style={{...S.watch, borderColor:`${session.color}44`, boxShadow:`0 0 30px ${session.glow}`}}>
+    <div style={{display:"flex",flexDirection:"column",gap:16}}>
+      {/* Stopwatch + progress */}
+      <div style={{...S.watch, borderColor:`${session.color}30`, boxShadow:`0 0 40px ${session.glow}`}}>
         <div>
-          <p style={S.wLabel}>Durata sessione</p>
+          <p style={S.wLabel}>Durata</p>
           <p style={{...S.wTime, color:session.color}}>{fmt(elapsed)}</p>
         </div>
-        <div style={S.row}>
-          {running
-            ? <button style={{...S.btn, background:"rgba(255,255,255,0.1)"}} onClick={()=>setRunning(false)}>⏸ Pausa</button>
-            : <button style={{...S.btn, background:`${session.color}99`}} onClick={()=>setRunning(true)}>▶ {elapsed===0?"Inizia":"Riprendi"}</button>}
-          <button style={{...S.btn, background:"rgba(255,107,107,0.3)"}} onClick={()=>{setRunning(false);setElapsed(0);}}>↺ Reset</button>
+        <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:8}}>
+          <div style={{display:"flex",gap:6}}>
+            {running
+              ? <Btn bg="rgba(255,255,255,0.08)" onClick={()=>setRunning(false)}><Pause size={14}/></Btn>
+              : <Btn bg={`${session.color}aa`} onClick={()=>setRunning(true)}><Play size={14}/></Btn>}
+            <Btn bg="rgba(251,113,133,0.2)" onClick={reset}><RotateCcw size={14}/></Btn>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <div style={{width:80,height:4,borderRadius:2,background:"rgba(255,255,255,0.06)",overflow:"hidden"}}>
+              <div style={{height:"100%",width:`${pct}%`,background:session.color,borderRadius:2,transition:"width 0.3s"}}/>
+            </div>
+            <span style={{fontSize:11,color:"rgba(255,255,255,0.4)",fontWeight:600}}>{pct}%</span>
+          </div>
         </div>
       </div>
 
-      {(session.groups ?? []).map((g, gIdx)=>(
+      {(session.groups??[]).map((g,gIdx)=>(
         <Group key={g.name} group={g} color={session.color}
           completedSets={completedSets[gIdx]}
-          onSetComplete={(exIdx, setIdx) => handleSetComplete(gIdx, exIdx, setIdx)} />
+          onSetComplete={(eIdx,sIdx)=>handleSet(gIdx,eIdx,sIdx)}
+          notes={notes[gIdx]}
+          onNote={(eIdx,sIdx,v)=>handleNote(gIdx,eIdx,sIdx,v)}/>
       ))}
 
-      <button style={{...S.finishBtn, background:`${session.color}99`}} onClick={handleFinish}>
-        ✅ Completa Sessione
+      <button style={{...S.finishBtn, background:`linear-gradient(135deg,${session.color}cc,${session.color}77)`}}
+        onClick={handleFinish}>
+        <CheckCircle2 size={18}/> Completa Sessione · {doneSets}/{totalSets} serie
       </button>
     </div>
   );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// EXTRA ACTIVITIES SESSION
+// EXTRA ACTIVITIES
 // ═══════════════════════════════════════════════════════════════════════════
+function ExtraSession({ session, onFinish }) {
+  const [active, setActive] = useState(null);
+  const { elapsed, running, setRunning, reset } = useStopwatch();
 
-function ExtraActivitiesSession({ session, onFinish }: { session: Session; onFinish: () => void }) {
-  const [activeActivity, setActiveActivity] = useState<Activity | null>(null);
-  const [elapsed, setElapsed] = useState(0);
-  const [running, setRunning] = useState(false);
-  const ref = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  useEffect(()=>{
-    if(running) ref.current=setInterval(()=>setElapsed((e: number)=>e+1),1000);
-    else { if(ref.current) clearInterval(ref.current); }
-    return ()=>{ if(ref.current) clearInterval(ref.current); };
-  },[running]);
-
-  const handleStart = (activity: Activity) => {
-    setActiveActivity(activity);
-    setElapsed(0);
-    setRunning(true);
-  };
-
-  const handleFinish = () => {
-    if (!activeActivity) return;
-
+  const handleStart = (a) => { setActive(a); reset(); setRunning(true); };
+  const handleFinish = async () => {
+    if (!active) return;
     const workout = {
-      id: Date.now().toString(),
-      date: new Date().toISOString(),
-      sessionId: session.id,
-      sessionName: `${session.label} - ${activeActivity.name}`,
-      activityType: activeActivity.name,
-      duration: elapsed,
-      completed: true,
-      exercises: [],
-      totalSets: 0,
-      completedSets: 0,
+      id: Date.now().toString(), date: new Date().toISOString(),
+      sessionId: session.id, sessionName: `${session.label} — ${active.name}`,
+      activityType: active.name, duration: elapsed, completed: true,
+      exercises: [], totalSets: 0, completedSets: 0
     };
-
-    saveWorkout(workout);
-    setActiveActivity(null);
-    setElapsed(0);
-    setRunning(false);
-    onFinish();
+    const prev = await store.get(STORAGE_KEYS.HISTORY) || [];
+    prev.push(workout);
+    await store.set(STORAGE_KEYS.HISTORY, prev);
+    setActive(null); reset(); onFinish();
   };
 
-  if (activeActivity) {
+  if (active) {
     return (
-      <div style={{display:"flex",flexDirection:"column",gap:"20px"}}>
-        <div style={{...S.card, borderColor:`${session.color}44`}}>
-          <div style={{display:"flex",alignItems:"center",gap:"12px",marginBottom:"16px"}}>
-            <span style={{fontSize:"36px"}}>{activeActivity.icon}</span>
+      <div style={{display:"flex",flexDirection:"column",gap:16}}>
+        <div style={{...S.card, borderColor:`${session.color}30`}}>
+          <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16}}>
+            <span style={{fontSize:36}}>{active.icon}</span>
             <div>
-              <h3 style={{margin:0,fontSize:"20px",fontWeight:"700",color:session.color}}>{activeActivity.name}</h3>
-              <p style={{margin:"4px 0 0",fontSize:"13px",color:"rgba(255,255,255,0.55)"}}>{activeActivity.description}</p>
+              <h3 style={{margin:0,fontSize:18,fontWeight:700,color:session.color}}>{active.name}</h3>
+              <p style={{margin:"4px 0 0",fontSize:12,color:"rgba(255,255,255,0.45)"}}>{active.description}</p>
             </div>
           </div>
-
-          <div style={{...S.watch, borderColor:`${session.color}44`, boxShadow:`0 0 30px ${session.glow}`, marginTop:"16px"}}>
+          <div style={{...S.watch, borderColor:`${session.color}30`}}>
             <div>
-              <p style={S.wLabel}>Durata attività</p>
+              <p style={S.wLabel}>Durata</p>
               <p style={{...S.wTime, color:session.color}}>{fmt(elapsed)}</p>
             </div>
-            <div style={S.row}>
+            <div style={{display:"flex",gap:6}}>
               {running
-                ? <button style={{...S.btn, background:"rgba(255,255,255,0.1)"}} onClick={()=>setRunning(false)}>⏸ Pausa</button>
-                : <button style={{...S.btn, background:`${session.color}99`}} onClick={()=>setRunning(true)}>▶ Riprendi</button>}
-              <button style={{...S.btn, background:"rgba(255,107,107,0.3)"}} onClick={()=>{setRunning(false);setElapsed(0);}}>↺ Reset</button>
+                ? <Btn bg="rgba(255,255,255,0.08)" onClick={()=>setRunning(false)}><Pause size={14}/></Btn>
+                : <Btn bg={`${session.color}88`} onClick={()=>setRunning(true)}><Play size={14}/></Btn>}
+              <Btn bg="rgba(251,113,133,0.2)" onClick={reset}><RotateCcw size={14}/></Btn>
             </div>
           </div>
         </div>
-
-        <button style={{...S.finishBtn, background:`${session.color}99`}} onClick={handleFinish}>
-          ✅ Completa Attività
+        <button style={{...S.finishBtn,background:`${session.color}88`}} onClick={handleFinish}>
+          <CheckCircle2 size={18}/> Completa
         </button>
-        <button style={{...S.btn, background:"rgba(255,255,255,0.08)",width:"100%",padding:"12px"}} 
-          onClick={()=>{setActiveActivity(null);setElapsed(0);setRunning(false);}}>
-          ← Torna alla selezione
-        </button>
+        <Btn bg="rgba(255,255,255,0.06)" style={{width:"100%",padding:12,justifyContent:"center"}}
+          onClick={()=>{setActive(null);reset();}}>
+          <ArrowLeft size={14}/> Torna alla selezione
+        </Btn>
       </div>
     );
   }
 
   return (
-    <div style={{display:"flex",flexDirection:"column",gap:"16px"}}>
-      <p style={{fontSize:"15px",color:"rgba(255,255,255,0.65)",margin:"0 0 8px"}}>
-        Seleziona un'attività per iniziare il timer:
-      </p>
-      {(session.activities ?? []).map(activity => (
-        <div key={activity.name} style={{...S.card, borderColor:`${session.color}44`, cursor:"pointer"}}
-          onClick={() => handleStart(activity)}>
-          <div style={{display:"flex",alignItems:"center",gap:"16px"}}>
-            <span style={{fontSize:"42px"}}>{activity.icon}</span>
+    <div style={{display:"flex",flexDirection:"column",gap:12}}>
+      {(session.activities??[]).map(a => (
+        <div key={a.name} style={{...S.card,borderColor:`${session.color}25`,cursor:"pointer"}} onClick={()=>handleStart(a)}>
+          <div style={{display:"flex",alignItems:"center",gap:14}}>
+            <span style={{fontSize:36}}>{a.icon}</span>
             <div style={{flex:1}}>
-              <h3 style={{margin:0,fontSize:"18px",fontWeight:"700",color:"#fff"}}>{activity.name}</h3>
-              <p style={{margin:"4px 0 0",fontSize:"13px",color:"rgba(255,255,255,0.55)",lineHeight:"1.5"}}>{activity.description}</p>
+              <h3 style={{margin:0,fontSize:16,fontWeight:700}}>{a.name}</h3>
+              <p style={{margin:"3px 0 0",fontSize:12,color:"rgba(255,255,255,0.4)"}}>{a.description}</p>
             </div>
-            <span style={{fontSize:"24px",color:session.color}}>▶</span>
+            <ChevronRight size={20} color={session.color}/>
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// HEATMAP CALENDAR
+// ═══════════════════════════════════════════════════════════════════════════
+function Heatmap({ history }) {
+  const today = new Date();
+  const weeks = 12;
+  const days = [];
+  for (let i = weeks * 7 - 1; i >= 0; i--) {
+    const d = new Date(today); d.setDate(d.getDate() - i);
+    days.push(d);
+  }
+
+  const countMap = {};
+  history.forEach(w => {
+    const key = new Date(w.date).toISOString().slice(0, 10);
+    countMap[key] = (countMap[key] || 0) + 1;
+  });
+
+  const getColor = (count) => {
+    if (!count) return "rgba(255,255,255,0.03)";
+    if (count === 1) return "rgba(129,140,248,0.3)";
+    if (count === 2) return "rgba(129,140,248,0.5)";
+    return "rgba(129,140,248,0.75)";
+  };
+
+  return (
+    <div style={{display:"flex",gap:2,flexWrap:"wrap",justifyContent:"flex-end"}}>
+      {days.map((d, i) => {
+        const key = d.toISOString().slice(0, 10);
+        const c = countMap[key] || 0;
+        const isToday = key === today.toISOString().slice(0, 10);
+        return (
+          <div key={i} title={`${key}: ${c} allenamenti`}
+            style={{width:12,height:12,borderRadius:3,background:getColor(c),
+              border: isToday ? "1px solid rgba(129,140,248,0.6)" : "none",
+              transition:"background 0.2s"}}/>
+        );
+      })}
     </div>
   );
 }
@@ -819,317 +505,292 @@ function ExtraActivitiesSession({ session, onFinish }: { session: Session; onFin
 // ═══════════════════════════════════════════════════════════════════════════
 // DASHBOARD
 // ═══════════════════════════════════════════════════════════════════════════
-
-function Dashboard({ onBack }: { onBack: () => void }) {
-  const history = getWorkoutHistory();
-  const [filter, setFilter] = useState("all"); // all, 7d, 30d, 90d, year
+function Dashboard({ onBack, history }) {
+  const [filter, setFilter] = useState("all");
   const [showHistory, setShowHistory] = useState(false);
-  const [importMsg, setImportMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [showBackup, setShowBackup] = useState(false);
+  const fileRef = useRef(null);
+  const [importMsg, setImportMsg] = useState(null);
 
-  const handleExport = async () => {
-    const data = {
-      exportDate: new Date().toISOString(),
-      appVersion: "v3",
-      workouts: history,
-    };
-    const jsonString = JSON.stringify(data, null, 2);
-    const dateStr = new Date().toISOString().slice(0, 10);
-    const fileName = `workout_backup_${dateStr}.json`;
+  const now = new Date();
+  const filterDays = { "7d":7, "30d":30, "90d":90, "year":365 };
+  const cutoff = filter === "all" ? null : new Date(now.getTime() - filterDays[filter]*864e5);
+  const filtered = cutoff ? history.filter(w => new Date(w.date).getTime() >= cutoff.getTime()) : history;
 
-    // Detect if running inside Capacitor (native app) or browser
-    const isNative = !!(window as any).Capacitor?.isNativePlatform?.();
+  const totalWorkouts = filtered.length;
+  const totalSets = filtered.reduce((s,w) => s + (w.completedSets||0), 0);
+  const totalDuration = filtered.reduce((s,w) => s + w.duration, 0);
+  const avgDuration = totalWorkouts > 0 ? Math.round(totalDuration / totalWorkouts) : 0;
 
-    if (isNative) {
-      try {
-        const { Filesystem, Directory } = await import('@capacitor/filesystem');
-        const { Share } = await import('@capacitor/share');
+  // Streak
+  const sortedDates = [...new Set(history.map(w=>new Date(w.date).toDateString()))]
+    .sort((a,b) => new Date(b).getTime()-new Date(a).getTime());
+  let streak = 0;
+  for (const d of sortedDates) {
+    if (Math.floor((now.getTime()-new Date(d).getTime())/864e5) === streak) streak++;
+    else break;
+  }
 
-        // Write file to cache directory
-        await Filesystem.writeFile({
-          path: fileName,
-          data: jsonString,
-          directory: Directory.Cache,
-          encoding: 'utf8' as any,
-        });
+  // Weekly chart data (last 8 weeks)
+  const weeklyData = [];
+  for (let i = 7; i >= 0; i--) {
+    const weekStart = new Date(now); weekStart.setDate(weekStart.getDate() - weekStart.getDay() - i*7);
+    const weekEnd = new Date(weekStart); weekEnd.setDate(weekEnd.getDate()+7);
+    const count = history.filter(w => {
+      const d = new Date(w.date);
+      return d >= weekStart && d < weekEnd;
+    }).length;
+    const label = `${weekStart.getDate()}/${weekStart.getMonth()+1}`;
+    weeklyData.push({ name: label, sessioni: count });
+  }
 
-        // Get the full URI of the saved file
-        const uriResult = await Filesystem.getUri({
-          path: fileName,
-          directory: Directory.Cache,
-        });
+  // Sessions distribution
+  const sessionCounts = {};
+  filtered.forEach(w => { const k = String(w.sessionId||"?"); sessionCounts[k] = (sessionCounts[k]||0)+1; });
 
-        // Open native share/save dialog
-        await Share.share({
-          title: 'Backup Allenamenti',
-          text: `Backup del ${dateStr}`,
-          url: uriResult.uri,
-          dialogTitle: 'Salva o condividi il backup',
-        });
-      } catch (err) {
-        console.error('Export error:', err);
-        alert('Errore durante il salvataggio. Riprova.');
-      }
-    } else {
-      // Browser fallback (StackBlitz, desktop)
-      const blob = new Blob([jsonString], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fileName;
-      a.click();
-      URL.revokeObjectURL(url);
-    }
+  // Top exercises
+  const exFreq = {};
+  filtered.forEach(w => w.exercises?.forEach(ex => { exFreq[ex.name] = (exFreq[ex.name]||0)+ex.setsCompleted; }));
+  const topEx = Object.entries(exFreq).sort((a,b)=>b[1]-a[1]).slice(0,5);
+
+  // Export / Import
+  const handleExport = () => {
+    const data = JSON.stringify({ exportDate: new Date().toISOString(), workouts: history }, null, 2);
+    const blob = new Blob([data], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url;
+    a.download = `workout_backup_${new Date().toISOString().slice(0,10)}.json`; a.click();
+    URL.revokeObjectURL(url);
   };
 
-  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const handleImport = async (e) => {
+    const file = e.target.files?.[0]; if (!file) return;
     const reader = new FileReader();
-    reader.onload = (ev: ProgressEvent<FileReader>) => {
+    reader.onload = async (ev) => {
       try {
-        const parsed = JSON.parse(ev.target?.result as string);
-        let workouts: WorkoutRecord[] = [];
-        if (Array.isArray(parsed)) {
-          workouts = parsed;
-        } else if (parsed.workouts && Array.isArray(parsed.workouts)) {
-          workouts = parsed.workouts;
-        } else {
-          setImportMsg({ ok: false, text: "❌ File non valido" });
-          return;
-        }
-        // Merge: skip duplicates by id
-        const existing = getWorkoutHistory();
-        const existingIds = new Set(existing.map((w: WorkoutRecord) => w.id));
-        const newOnes = workouts.filter((w: WorkoutRecord) => !existingIds.has(w.id));
-        const merged = [...existing, ...newOnes].sort((a: WorkoutRecord, b: WorkoutRecord) => 
-          new Date(a.date).getTime() - new Date(b.date).getTime()
-        );
-        localStorage.setItem("workoutHistory", JSON.stringify(merged));
-        setImportMsg({ ok: true, text: `✅ Importati ${newOnes.length} allenamenti (${workouts.length - newOnes.length} già presenti)` });
-        setTimeout(() => window.location.reload(), 1800);
-      } catch {
-        setImportMsg({ ok: false, text: "❌ Errore nel parsing del file" });
-      }
+        const parsed = JSON.parse(ev.target.result);
+        let workouts = Array.isArray(parsed) ? parsed : parsed.workouts;
+        if (!Array.isArray(workouts)) { setImportMsg({ ok:false, text:"❌ File non valido" }); return; }
+        const existing = await store.get(STORAGE_KEYS.HISTORY) || [];
+        const ids = new Set(existing.map(w=>w.id));
+        const newOnes = workouts.filter(w=>!ids.has(w.id));
+        const merged = [...existing, ...newOnes].sort((a,b)=>new Date(a.date)-new Date(b.date));
+        await store.set(STORAGE_KEYS.HISTORY, merged);
+        setImportMsg({ ok:true, text:`✅ Importati ${newOnes.length} allenamenti` });
+      } catch { setImportMsg({ ok:false, text:"❌ Errore parsing" }); }
     };
     reader.readAsText(file);
     e.target.value = "";
   };
 
-  // Calculate stats
-  const now = new Date();
-  const filterDays: Record<string, number> = { "7d": 7, "30d": 30, "90d": 90, "year": 365 };
-  const cutoff = filter === "all" ? null : new Date(now.getTime() - filterDays[filter] * 24 * 60 * 60 * 1000);
-
-  const filtered = cutoff
-    ? history.filter((w: WorkoutRecord) => new Date(w.date).getTime() >= cutoff!.getTime())
-    : history;
-
-  const totalWorkouts = filtered.length;
-  const totalSets = filtered.reduce((sum: number, w: WorkoutRecord) => sum + (w.completedSets || 0), 0);
-  const avgDuration = totalWorkouts > 0
-    ? Math.round(filtered.reduce((sum: number, w: WorkoutRecord) => sum + w.duration, 0) / totalWorkouts)
-    : 0;
-
-  // Streak calculation
-  const sortedDates = history
-    .map((w: WorkoutRecord) => new Date(w.date).toDateString())
-    .filter((v: string, i: number, a: string[]) => a.indexOf(v) === i)
-    .sort((a: string, b: string) => new Date(b).getTime() - new Date(a).getTime());
-
-  let streak = 0;
-  const currentDate = new Date();
-  for (const date of sortedDates) {
-    const diff = Math.floor((currentDate.getTime() - new Date(date).getTime()) / (24 * 60 * 60 * 1000));
-    if (diff === streak) streak++;
-    else break;
-  }
-
-  // Sessions distribution
-  const sessionCounts = filtered.reduce((acc: Record<string, number>, w: WorkoutRecord) => {
-    const key = String(w.sessionId || "other");
-    acc[key] = (acc[key] || 0) + 1;
-    return acc;
-  }, {} as Record<string, number>);
-
-  // Exercise frequency
-  const exerciseFreq: Record<string, number> = {};
-  filtered.forEach((w: WorkoutRecord) => {
-    if (w.exercises) {
-      w.exercises.forEach((ex: ExerciseRecord) => {
-        exerciseFreq[ex.name] = (exerciseFreq[ex.name] || 0) + ex.setsCompleted;
-      });
-    }
-  });
-  const topExercises = Object.entries(exerciseFreq)
-    .sort((a, b) => (b[1] as number) - (a[1] as number))
-    .slice(0, 5);
-
-  const statCards = [
-    { label: "Streak 🔥", value: `${streak} giorni`, color: "#FF6B6B" },
-    { label: "Allenamenti", value: totalWorkouts, color: "#6C63FF" },
-    { label: "Serie Totali", value: totalSets, color: "#00D4AA" },
-    { label: "Durata Media", value: fmt(avgDuration), color: "#FFA500" },
+  const stats = [
+    { label:"Streak", value:`${streak}g`, color:"#f472b6", icon:<Flame size={16}/> },
+    { label:"Sessioni", value:String(totalWorkouts), color:"#818cf8", icon:<Dumbbell size={16}/> },
+    { label:"Serie", value:String(totalSets), color:"#34d399", icon:<Zap size={16}/> },
+    { label:"Media", value:fmt(avgDuration), color:"#fbbf24", icon:<Clock size={16}/> },
   ];
 
+  const handleDelete = async (id) => {
+    const prev = await store.get(STORAGE_KEYS.HISTORY) || [];
+    await store.set(STORAGE_KEYS.HISTORY, prev.filter(w => w.id !== id));
+    window.location.reload();
+  };
+
   return (
-    <div style={{display:"flex",flexDirection:"column",gap:"20px",paddingBottom:"40px"}}>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-        <h2 style={{margin:0,fontSize:"24px",fontWeight:"800",color:"#fff"}}>📊 Dashboard</h2>
-        <button style={{...S.btn, background:"rgba(255,255,255,0.08)"}} onClick={onBack}>
-          ← Allenamenti
-        </button>
-      </div>
-
-      {/* Backup / Restore */}
-      <div style={{...S.card, borderColor:"rgba(255,165,0,0.3)", background:"rgba(255,165,0,0.06)"}}>
-        <p style={{margin:"0 0 12px",fontSize:"13px",fontWeight:"700",color:"#FFA500",letterSpacing:"0.05em"}}>
-          💾 BACKUP DATI
-        </p>
-        <p style={{margin:"0 0 12px",fontSize:"12px",color:"rgba(255,255,255,0.5)",lineHeight:"1.6"}}>
-          Esporta un file JSON con tutto lo storico — copialo su Google Drive per non perderlo.
-        </p>
-        <div style={{display:"flex",gap:"10px",flexWrap:"wrap"}}>
-          <button style={{...S.btn, background:"rgba(255,165,0,0.5)", padding:"10px 20px", fontSize:"13px"}}
-            onClick={handleExport}>
-            ⬇️ Salva Dati (JSON)
-          </button>
-          <button style={{...S.btn, background:"rgba(108,99,255,0.4)", padding:"10px 20px", fontSize:"13px"}}
-            onClick={() => fileInputRef.current?.click()}>
-            ⬆️ Importa Dati
-          </button>
-          <input ref={fileInputRef} type="file" accept=".json" style={{display:"none"}} onChange={handleImport} />
+    <div style={{display:"flex",flexDirection:"column",gap:14,paddingBottom:40}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <BarChart3 size={22} color="#818cf8"/>
+          <h2 style={{margin:0,fontSize:22,fontWeight:800,letterSpacing:"-0.02em"}}>Dashboard</h2>
         </div>
-        {importMsg && (
-          <p style={{margin:"10px 0 0",fontSize:"13px",fontWeight:"600",
-            color: importMsg.ok ? "#00D4AA" : "#FF6B6B"}}>
-            {importMsg.text}
-          </p>
-        )}
+        <Btn bg="rgba(255,255,255,0.06)" style={{border:"1px solid rgba(255,255,255,0.08)"}} onClick={onBack}>
+          <ArrowLeft size={14}/> Indietro
+        </Btn>
       </div>
 
-      {/* Filter buttons */}
-      <div style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>
-        {["all", "7d", "30d", "90d", "year"].map(f => (
-          <button key={f}
-            style={{...S.btn, 
-              background: filter === f ? "rgba(108,99,255,0.6)" : "rgba(255,255,255,0.08)",
-              border: filter === f ? "1px solid #6C63FF" : "none"}}
-            onClick={() => setFilter(f)}>
-            {f === "all" ? "Tutto" : f === "7d" ? "7 giorni" : f === "30d" ? "30 giorni" : f === "90d" ? "90 giorni" : "Anno"}
+      {/* Heatmap */}
+      <div style={{...S.card, borderColor:"rgba(255,255,255,0.06)"}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+          <Calendar size={14} color="rgba(255,255,255,0.35)"/>
+          <span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.08em"}}>
+            Ultime 12 settimane
+          </span>
+        </div>
+        <Heatmap history={history}/>
+      </div>
+
+      {/* Filters */}
+      <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+        {["all","7d","30d","90d","year"].map(f=>(
+          <button key={f} style={{...S.btn,padding:"5px 14px",fontSize:11,
+            background:filter===f?"rgba(129,140,248,0.2)":"rgba(255,255,255,0.04)",
+            border:filter===f?"1px solid rgba(129,140,248,0.5)":"1px solid rgba(255,255,255,0.06)",
+            color:filter===f?"#818cf8":"rgba(255,255,255,0.4)"}} onClick={()=>setFilter(f)}>
+            {f==="all"?"Tutto":f==="7d"?"7g":f==="30d"?"30g":f==="90d"?"90g":"Anno"}
           </button>
         ))}
       </div>
 
-      {/* Stats cards */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:"12px"}}>
-        {statCards.map(card => (
-          <div key={card.label} style={{...S.card, borderColor:`${card.color}44`, padding:"16px"}}>
-            <p style={{margin:"0 0 4px",fontSize:"11px",color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.05em"}}>
-              {card.label}
-            </p>
-            <p style={{margin:0,fontSize:"26px",fontWeight:"800",color:card.color}}>
-              {card.value}
-            </p>
+      {/* Stat cards */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+        {stats.map(c=>(
+          <div key={c.label} style={{...S.card,borderColor:`${c.color}18`,padding:"14px 16px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8,color:c.color}}>
+              {c.icon}
+              <span style={{fontSize:10,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.35)"}}>{c.label}</span>
+            </div>
+            <p style={{margin:0,fontSize:26,fontWeight:800,color:c.color,fontFamily:"monospace"}}>{c.value}</p>
           </div>
         ))}
       </div>
 
-      {/* Session distribution */}
-      <div style={{...S.card, borderColor:"rgba(255,255,255,0.12)"}}>
-        <h3 style={{margin:"0 0 16px",fontSize:"16px",fontWeight:"700"}}>Distribuzione Sessioni</h3>
-        <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
-          {Object.entries(sessionCounts).map(([id, count]) => {
-            const session = sessions.find(s => s.id === parseInt(id));
-            const label = session ? session.label : "Altre attività";
-            const color = session ? session.color : "#999";
-            const pct = (count / totalWorkouts * 100).toFixed(0);
+      {/* Weekly chart */}
+      {history.length > 0 && (
+        <div style={{...S.card, borderColor:"rgba(255,255,255,0.06)"}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
+            <TrendingUp size={14} color="rgba(255,255,255,0.35)"/>
+            <span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.08em"}}>Sessioni per settimana</span>
+          </div>
+          <ResponsiveContainer width="100%" height={120}>
+            <AreaChart data={weeklyData}>
+              <defs>
+                <linearGradient id="grad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#818cf8" stopOpacity={0.3}/>
+                  <stop offset="95%" stopColor="#818cf8" stopOpacity={0}/>
+                </linearGradient>
+              </defs>
+              <XAxis dataKey="name" tick={{fill:"rgba(255,255,255,0.25)",fontSize:10}} axisLine={false} tickLine={false}/>
+              <YAxis hide allowDecimals={false}/>
+              <Tooltip contentStyle={{background:"#1a1a2e",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,fontSize:12,color:"#fff"}}/>
+              <Area type="monotone" dataKey="sessioni" stroke="#818cf8" fill="url(#grad)" strokeWidth={2}/>
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* Distribution */}
+      {Object.keys(sessionCounts).length > 0 && (
+        <div style={{...S.card, borderColor:"rgba(255,255,255,0.06)"}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+            <Activity size={14} color="rgba(255,255,255,0.35)"/>
+            <span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.08em"}}>Distribuzione</span>
+          </div>
+          {Object.entries(sessionCounts).map(([id,count])=>{
+            const sess = sessions.find(s=>s.id===parseInt(id));
+            const color = sess?.color||"#999";
+            const pct = (count/totalWorkouts*100).toFixed(0);
             return (
-              <div key={id} style={{display:"flex",alignItems:"center",gap:"12px"}}>
-                <div style={{flex:1}}>
-                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:"4px"}}>
-                    <span style={{fontSize:"13px",fontWeight:"600",color}}>{label}</span>
-                    <span style={{fontSize:"12px",color:"rgba(255,255,255,0.5)"}}>{count} × ({pct}%)</span>
-                  </div>
-                  <div style={{height:"6px",background:"rgba(255,255,255,0.08)",borderRadius:"3px",overflow:"hidden"}}>
-                    <div style={{height:"100%",width:`${pct}%`,background:color,transition:"width 0.3s"}} />
-                  </div>
+              <div key={id} style={{marginBottom:8}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                  <span style={{fontSize:12,fontWeight:600,color}}>{sess?.label||"Extra"}</span>
+                  <span style={{fontSize:11,color:"rgba(255,255,255,0.3)"}}>{count}× · {pct}%</span>
+                </div>
+                <div style={{height:3,background:"rgba(255,255,255,0.05)",borderRadius:2,overflow:"hidden"}}>
+                  <div style={{height:"100%",width:`${pct}%`,background:color,borderRadius:2,transition:"width 0.4s"}}/>
                 </div>
               </div>
             );
           })}
         </div>
-      </div>
+      )}
 
       {/* Top exercises */}
-      {topExercises.length > 0 && (
-        <div style={{...S.card, borderColor:"rgba(255,255,255,0.12)"}}>
-          <h3 style={{margin:"0 0 16px",fontSize:"16px",fontWeight:"700"}}>Top 5 Esercizi</h3>
-          <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
-            {topExercises.map(([name, sets], idx) => (
-              <div key={name} style={{display:"flex",alignItems:"center",gap:"12px"}}>
-                <span style={{fontSize:"18px",fontWeight:"700",color:"rgba(255,255,255,0.3)",minWidth:"24px"}}>
-                  #{idx + 1}
-                </span>
-                <div style={{flex:1}}>
-                  <p style={{margin:"0 0 2px",fontSize:"14px",fontWeight:"600",color:"#fff"}}>{name}</p>
-                  <p style={{margin:0,fontSize:"12px",color:"rgba(255,255,255,0.5)"}}>{sets} serie</p>
-                </div>
-              </div>
-            ))}
+      {topEx.length > 0 && (
+        <div style={{...S.card, borderColor:"rgba(255,255,255,0.06)"}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+            <Trophy size={14} color="rgba(255,255,255,0.35)"/>
+            <span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.08em"}}>Top Esercizi</span>
           </div>
+          {topEx.map(([name,sets],idx)=>(
+            <div key={name} style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+              <span style={{fontSize:14,minWidth:22,textAlign:"center"}}>
+                {idx===0?"🥇":idx===1?"🥈":idx===2?"🥉":`${idx+1}.`}
+              </span>
+              <div style={{flex:1}}>
+                <p style={{margin:0,fontSize:13,fontWeight:600,color:"rgba(255,255,255,0.8)"}}>{name}</p>
+                <p style={{margin:0,fontSize:10,color:"rgba(255,255,255,0.3)"}}>{sets} serie totali</p>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
       {/* History toggle */}
-      <button style={{...S.btn, background:"rgba(108,99,255,0.3)",width:"100%",padding:"12px"}}
-        onClick={() => setShowHistory(!showHistory)}>
-        {showHistory ? "Nascondi Storico ▲" : "Mostra Storico ▼"}
+      <button style={{...S.btn,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.06)",
+        width:"100%",padding:12,justifyContent:"center",borderRadius:14}} onClick={()=>setShowHistory(!showHistory)}>
+        <Calendar size={14}/> {showHistory?"Nascondi Storico":"Mostra Storico"}
+        {showHistory?<ChevronUp size={14}/>:<ChevronDown size={14}/>}
       </button>
 
-      {/* History list */}
       {showHistory && (
-        <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
-          {history.slice().reverse().map(w => {
-            const session = sessions.find(s => s.id === w.sessionId);
-            const color = session ? session.color : "#999";
-            const date = new Date(w.date);
-            const dateStr = date.toLocaleDateString("it-IT", {day:"numeric",month:"short",year:"numeric"});
-            const timeStr = date.toLocaleTimeString("it-IT", {hour:"2-digit",minute:"2-digit"});
-            
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          {history.slice().reverse().map(w=>{
+            const sess = sessions.find(s=>s.id===w.sessionId);
+            const color = sess?.color||"#999";
+            const d = new Date(w.date);
             return (
-              <div key={w.id} style={{...S.card, borderColor:`${color}33`, padding:"14px"}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"8px"}}>
+              <div key={w.id} style={{...S.card,borderColor:`${color}18`,padding:13}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
                   <div>
-                    <p style={{margin:"0 0 2px",fontSize:"14px",fontWeight:"700",color}}>{w.sessionName}</p>
-                    <p style={{margin:0,fontSize:"11px",color:"rgba(255,255,255,0.45)"}}>
-                      {dateStr} · {timeStr}
+                    <p style={{margin:"0 0 2px",fontSize:13,fontWeight:700,color}}>{w.sessionName}</p>
+                    <p style={{margin:0,fontSize:10,color:"rgba(255,255,255,0.3)"}}>
+                      {d.toLocaleDateString("it-IT",{day:"numeric",month:"short",year:"numeric"})} · {d.toLocaleTimeString("it-IT",{hour:"2-digit",minute:"2-digit"})}
                     </p>
                   </div>
-                  <button style={{...S.sm, background:"rgba(255,107,107,0.3)",width:"28px",height:"28px",fontSize:"12px"}}
-                    onClick={() => {
-                      if (confirm("Eliminare questo allenamento?")) {
-                        deleteWorkout(w.id);
-                        window.location.reload();
-                      }
-                    }}>
-                    🗑
+                  <button style={{...S.sm,background:"rgba(251,113,133,0.15)",width:28,height:28}}
+                    onClick={()=>{if(confirm("Eliminare?")){handleDelete(w.id)}}}>
+                    <Trash2 size={12}/>
                   </button>
                 </div>
-                <div style={{display:"flex",gap:"16px",fontSize:"12px",color:"rgba(255,255,255,0.55)"}}>
-                  <span>⏱ {fmt(w.duration)}</span>
-                  {w.completedSets > 0 && <span>💪 {w.completedSets} serie</span>}
+                <div style={{display:"flex",gap:12,fontSize:11,color:"rgba(255,255,255,0.35)"}}>
+                  <span style={{display:"flex",alignItems:"center",gap:4}}><Clock size={11}/> {fmt(w.duration)}</span>
+                  {w.completedSets>0&&<span style={{display:"flex",alignItems:"center",gap:4}}><Dumbbell size={11}/> {w.completedSets} serie</span>}
                 </div>
+                {/* Show notes if any */}
+                {w.exercises?.some(e=>e.notes?.length>0) && (
+                  <div style={{marginTop:8,paddingTop:8,borderTop:"1px solid rgba(255,255,255,0.05)"}}>
+                    {w.exercises.filter(e=>e.notes?.length>0).map(e=>(
+                      <p key={e.name} style={{margin:"2px 0",fontSize:10,color:"rgba(255,255,255,0.4)"}}>
+                        <span style={{color:"rgba(255,255,255,0.55)",fontWeight:600}}>{e.name}:</span> {e.notes.join(" · ")}
+                      </p>
+                    ))}
+                  </div>
+                )}
               </div>
             );
           })}
-          {history.length === 0 && (
-            <p style={{textAlign:"center",color:"rgba(255,255,255,0.45)",padding:"20px"}}>
-              Nessun allenamento registrato
-            </p>
-          )}
+          {history.length===0&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.25)",padding:20,fontSize:12}}>Nessun allenamento</p>}
         </div>
       )}
+
+      {/* Data management */}
+      <div style={{...S.card,borderColor:"rgba(129,140,248,0.12)",marginTop:4}}>
+        <button style={{display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%",
+          background:"none",border:"none",cursor:"pointer",color:"#fff",padding:0}} onClick={()=>setShowBackup(!showBackup)}>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <Database size={14} color="#818cf8"/>
+            <span style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.7)"}}>Gestione Dati</span>
+          </div>
+          {showBackup?<ChevronUp size={14} color="rgba(255,255,255,0.3)"/>:<ChevronDown size={14} color="rgba(255,255,255,0.3)"/>}
+        </button>
+        {showBackup&&(
+          <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid rgba(255,255,255,0.05)"}}>
+            <p style={{margin:"0 0 12px",fontSize:11,color:"rgba(255,255,255,0.35)",lineHeight:1.6}}>
+              Esporta JSON di backup. I dati sono salvati in modo persistente.
+            </p>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              <Btn bg="rgba(52,211,153,0.15)" style={{border:"1px solid rgba(52,211,153,0.3)",color:"#34d399",padding:"9px 16px"}} onClick={handleExport}>
+                <Download size={13}/> Esporta
+              </Btn>
+              <Btn bg="rgba(129,140,248,0.15)" style={{border:"1px solid rgba(129,140,248,0.3)",color:"#818cf8",padding:"9px 16px"}} onClick={()=>fileRef.current?.click()}>
+                <Upload size={13}/> Importa
+              </Btn>
+              <input ref={fileRef} type="file" accept=".json" style={{display:"none"}} onChange={handleImport}/>
+            </div>
+            {importMsg&&<p style={{margin:"10px 0 0",fontSize:12,fontWeight:600,color:importMsg.ok?"#34d399":"#fb7185"}}>{importMsg.text}</p>}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -1137,89 +798,149 @@ function Dashboard({ onBack }: { onBack: () => void }) {
 // ═══════════════════════════════════════════════════════════════════════════
 // MAIN APP
 // ═══════════════════════════════════════════════════════════════════════════
-
 export default function App() {
-  const [view, setView] = useState("tabs"); // tabs | session | dashboard
+  const [view, setView] = useState("home");
   const [activeSession, setActiveSession] = useState(0);
+  const [history, setHistory] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  const handleSessionSelect = (idx: number) => {
-    setActiveSession(idx);
-    setView("session");
+  useEffect(() => {
+    const link = document.createElement("link");
+    link.href = "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap";
+    link.rel = "stylesheet"; document.head.appendChild(link);
+    // Load history
+    store.get(STORAGE_KEYS.HISTORY).then(data => {
+      setHistory(data || []);
+      setLoading(false);
+    });
+  }, []);
+
+  const refreshHistory = async () => {
+    const data = await store.get(STORAGE_KEYS.HISTORY) || [];
+    setHistory(data);
   };
 
-  const handleFinish = () => {
-    alert("✅ Sessione salvata!");
-    setView("tabs");
-  };
+  const handleSelect = (i) => { setActiveSession(i); setView("session"); };
+  const handleFinish = () => { refreshHistory(); setView("home"); };
 
-  if (view === "dashboard") {
+  // Last workout info
+  const lastWorkout = history.length > 0 ? history[history.length-1] : null;
+  const lastSession = lastWorkout ? sessions.find(s=>s.id===lastWorkout.sessionId) : null;
+
+  if (loading) {
     return (
-      <div style={S.root}>
-        <div style={S.b1}/><div style={S.b2}/><div style={S.b3}/>
-        <div style={S.wrap}>
-          <Dashboard onBack={() => setView("tabs")} />
+      <div style={{...S.root, display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100vh"}}>
+        <div style={{textAlign:"center"}}>
+          <Dumbbell size={36} color="#818cf8" style={{marginBottom:12}}/>
+          <p style={{color:"rgba(255,255,255,0.4)",fontSize:13}}>Caricamento...</p>
         </div>
       </div>
     );
   }
 
-  if (view === "session") {
-    const session = sessions[activeSession];
-    return (
-      <div style={S.root}>
-        <div style={S.b1}/><div style={S.b2}/><div style={S.b3}/>
-        <div style={S.wrap}>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"20px"}}>
-            <h2 style={{margin:0,fontSize:"20px",fontWeight:"700",color:session.color}}>
+  const renderView = () => {
+    if (view === "dashboard") {
+      return <Dashboard onBack={()=>setView("home")} history={history}/>;
+    }
+    if (view === "session") {
+      const session = sessions[activeSession];
+      return (
+        <>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+            <h2 style={{margin:0,fontSize:18,fontWeight:800,color:session.color}}>
               {session.icon} {session.label}
             </h2>
-            <button style={{...S.btn, background:"rgba(255,255,255,0.08)"}} 
-              onClick={() => setView("tabs")}>
-              ← Indietro
-            </button>
+            <Btn bg="rgba(255,255,255,0.06)" style={{border:"1px solid rgba(255,255,255,0.08)"}}
+              onClick={()=>setView("home")}>
+              <ArrowLeft size={14}/> Indietro
+            </Btn>
           </div>
-          {session.type === "extra" ? (
-            <ExtraActivitiesSession session={session} onFinish={handleFinish} />
-          ) : (
-            <WorkoutSession session={session} onFinish={handleFinish} />
-          )}
+          {session.type==="extra"
+            ? <ExtraSession session={session} onFinish={handleFinish}/>
+            : <WorkoutSession session={session} onFinish={handleFinish} history={history}/>}
+        </>
+      );
+    }
+
+    // HOME
+    return (
+      <>
+        <div style={{textAlign:"center",marginBottom:28}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:10,marginBottom:6}}>
+            <Dumbbell size={26} color="#818cf8"/>
+            <h1 style={S.title}>Workout Tracker</h1>
+          </div>
+          <p style={{color:"rgba(255,255,255,0.25)",fontSize:12,margin:0,letterSpacing:"0.06em"}}>
+            3 SESSIONI · ATTIVITÀ EXTRA
+          </p>
         </div>
-      </div>
+
+        {/* Quick resume */}
+        {lastWorkout && lastSession && (
+          <div style={{...S.card,borderColor:`${lastSession.color}20`,marginBottom:12,cursor:"pointer",
+            background:`linear-gradient(135deg,${lastSession.color}08,transparent)`}}
+            onClick={()=>handleSelect(sessions.indexOf(lastSession))}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <Zap size={16} color={lastSession.color}/>
+                <div>
+                  <p style={{margin:0,fontSize:12,fontWeight:700,color:lastSession.color}}>Ripeti ultima sessione</p>
+                  <p style={{margin:"2px 0 0",fontSize:11,color:"rgba(255,255,255,0.35)"}}>
+                    {lastSession.label} · {new Date(lastWorkout.date).toLocaleDateString("it-IT",{day:"numeric",month:"short"})}
+                  </p>
+                </div>
+              </div>
+              <ChevronRight size={18} color={lastSession.color}/>
+            </div>
+          </div>
+        )}
+
+        {/* Session cards */}
+        <div style={S.tabs}>
+          {sessions.map((s,i)=>(
+            <button key={s.id} style={{...S.tab,
+              background:`linear-gradient(145deg,${s.color}12,${s.color}06)`,
+              borderColor:`${s.color}25`}} onClick={()=>handleSelect(i)}>
+              <span style={{fontSize:28,marginBottom:4}}>{s.icon}</span>
+              <span style={{fontSize:13,fontWeight:700,color:"#fff"}}>{s.label}</span>
+              <span style={{fontSize:10,color:"rgba(255,255,255,0.35)",textAlign:"center",marginTop:1}}>{s.subtitle}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* Mini stats */}
+        {history.length > 0 && (
+          <div style={{display:"flex",gap:8,marginTop:16}}>
+            <div style={{flex:1,...S.card,padding:"10px 14px",borderColor:"rgba(255,255,255,0.05)",display:"flex",alignItems:"center",gap:8}}>
+              <Flame size={14} color="#f472b6"/>
+              <span style={{fontSize:20,fontWeight:800,color:"#f472b6",fontFamily:"monospace"}}>{history.length}</span>
+              <span style={{fontSize:10,color:"rgba(255,255,255,0.3)"}}>sessioni</span>
+            </div>
+            <div style={{flex:1,...S.card,padding:"10px 14px",borderColor:"rgba(255,255,255,0.05)",display:"flex",alignItems:"center",gap:8}}>
+              <Clock size={14} color="#fbbf24"/>
+              <span style={{fontSize:20,fontWeight:800,color:"#fbbf24",fontFamily:"monospace"}}>{fmt(history.reduce((s,w)=>s+w.duration,0))}</span>
+              <span style={{fontSize:10,color:"rgba(255,255,255,0.3)"}}>totale</span>
+            </div>
+          </div>
+        )}
+      </>
     );
-  }
+  };
 
   return (
     <div style={S.root}>
       <div style={S.b1}/><div style={S.b2}/><div style={S.b3}/>
       <div style={S.wrap}>
-        <div style={{textAlign:"center",marginBottom:"28px"}}>
-          <h1 style={S.title}>🏋️ Scheda Allenamento</h1>
-          <p style={{color:"rgba(255,255,255,0.45)",fontSize:"13px",margin:0}}>
-            3 sessioni + Attività Extra
-          </p>
-        </div>
-
-        <div style={{display:"flex",gap:"10px",marginBottom:"24px",justifyContent:"center"}}>
-          <button style={{...S.btn, background:"rgba(108,99,255,0.5)",padding:"10px 20px"}}
-            onClick={() => setView("dashboard")}>
-            📊 Dashboard
-          </button>
-        </div>
-
-        <div style={S.tabs}>
-          {sessions.map((s,i)=>(
-            <button key={s.id} style={{...S.tab,
-              background:`linear-gradient(135deg,${s.color}66,${s.color}33)`,
-              borderColor:`${s.color}88`}}
-              onClick={()=>handleSessionSelect(i)}>
-              <span style={{fontSize:"32px",marginBottom:"4px"}}>{s.icon}</span>
-              <span style={{fontSize:"14px",fontWeight:"700",color:"#fff"}}>{s.label}</span>
-              <span style={{fontSize:"11px",color:"rgba(255,255,255,0.65)",textAlign:"center",marginTop:"2px"}}>
-                {s.subtitle}
-              </span>
-            </button>
-          ))}
-        </div>
+        {renderView()}
+      </div>
+      {/* Bottom nav */}
+      <div style={S.bottomNav}>
+        <button style={{...S.navBtn, color: view==="home"?"#818cf8":"rgba(255,255,255,0.3)"}} onClick={()=>setView("home")}>
+          <Home size={20}/><span style={{fontSize:10,marginTop:2}}>Home</span>
+        </button>
+        <button style={{...S.navBtn, color: view==="dashboard"?"#818cf8":"rgba(255,255,255,0.3)"}} onClick={()=>setView("dashboard")}>
+          <BarChart3 size={20}/><span style={{fontSize:10,marginTop:2}}>Stats</span>
+        </button>
       </div>
     </div>
   );
@@ -1228,37 +949,39 @@ export default function App() {
 // ═══════════════════════════════════════════════════════════════════════════
 // STYLES
 // ═══════════════════════════════════════════════════════════════════════════
-
-const S: Record<string, CSSProperties> = {
-  root:{minHeight:"100vh",background:"linear-gradient(135deg,#0a0a1a 0%,#0d1224 50%,#0a0a1a 100%)",fontFamily:"'Segoe UI',system-ui,sans-serif",color:"#fff",position:"relative",overflowX:"hidden"},
-  b1:{position:"fixed",top:"-120px",left:"-120px",width:"420px",height:"420px",borderRadius:"50%",background:"radial-gradient(circle,rgba(108,99,255,0.18) 0%,transparent 70%)",pointerEvents:"none",zIndex:0},
-  b2:{position:"fixed",bottom:"-100px",right:"-100px",width:"380px",height:"380px",borderRadius:"50%",background:"radial-gradient(circle,rgba(255,107,107,0.15) 0%,transparent 70%)",pointerEvents:"none",zIndex:0},
-  b3:{position:"fixed",top:"40%",left:"50%",transform:"translate(-50%,-50%)",width:"300px",height:"300px",borderRadius:"50%",background:"radial-gradient(circle,rgba(0,212,170,0.08) 0%,transparent 70%)",pointerEvents:"none",zIndex:0},
-  wrap:{position:"relative",zIndex:1,maxWidth:"760px",margin:"0 auto",padding:"24px 16px 64px"},
-  title:{fontSize:"clamp(22px,5vw,34px)",fontWeight:"800",margin:"0 0 6px",background:"linear-gradient(90deg,#6C63FF,#FF6B6B,#00D4AA)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"},
-  tabs:{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:"12px"},
-  tab:{display:"flex",flexDirection:"column",alignItems:"center",gap:"2px",padding:"20px 12px",border:"1px solid",borderRadius:"16px",cursor:"pointer",transition:"all 0.25s cubic-bezier(.4,0,.2,1)",backdropFilter:"blur(14px)"},
-  watch:{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:"12px",background:"rgba(255,255,255,0.05)",backdropFilter:"blur(20px)",border:"1px solid",borderRadius:"20px",padding:"18px 20px"},
-  wLabel:{margin:"0 0 4px",fontSize:"12px",color:"rgba(255,255,255,0.5)",letterSpacing:"0.05em",textTransform:"uppercase"},
-  wTime:{margin:0,fontSize:"36px",fontWeight:"800",fontFamily:"monospace",letterSpacing:"2px"},
-  card:{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px)",border:"1px solid",borderRadius:"16px",padding:"16px"},
-  cardHead:{display:"flex",alignItems:"flex-start",gap:"12px"},
-  exName:{margin:"0 0 4px",fontSize:"15px",fontWeight:"700",color:"#fff"},
-  exMeta:{margin:0,fontSize:"12px",color:"rgba(255,255,255,0.45)"},
-  infoBtn:{width:"32px",height:"32px",borderRadius:"50%",border:"1px solid",background:"transparent",cursor:"pointer",fontSize:"14px",fontWeight:"700",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"},
-  desc:{background:"rgba(255,255,255,0.04)",border:"1px solid",borderRadius:"10px",padding:"12px 14px",margin:"12px 0 8px"},
-  descTxt:{margin:0,fontSize:"13px",lineHeight:"1.65",color:"rgba(255,255,255,0.75)"},
-  exTimer:{position:"relative",height:"38px",background:"rgba(255,255,255,0.06)",borderRadius:"10px",margin:"10px 0 2px",display:"flex",alignItems:"center",padding:"0 12px",gap:"10px",overflow:"hidden"},
-  timerBar:{position:"absolute",left:0,top:0,height:"100%",borderRadius:"10px",opacity:0.15,transition:"width 0.9s linear,background 0.3s"},
-  timerTxt:{fontFamily:"monospace",fontWeight:"700",fontSize:"16px",color:"#fff",zIndex:1},
-  sets:{display:"flex",flexWrap:"wrap",gap:"8px",alignItems:"center",marginTop:"12px"},
-  dot:{width:"38px",height:"38px",borderRadius:"50%",border:"2px solid",cursor:"pointer",fontSize:"13px",fontWeight:"700",color:"#fff",transition:"all 0.2s cubic-bezier(.4,0,.2,1)",display:"flex",alignItems:"center",justifyContent:"center"},
-  restBtn:{padding:"6px 14px",borderRadius:"20px",border:"1px solid",background:"transparent",cursor:"pointer",fontSize:"12px",fontWeight:"700",marginLeft:"auto"},
-  overlay:{position:"fixed",inset:0,zIndex:1000,background:"rgba(0,0,0,0.65)",backdropFilter:"blur(8px)",display:"flex",alignItems:"center",justifyContent:"center"},
-  modalCard:{background:"rgba(255,255,255,0.08)",backdropFilter:"blur(28px)",border:"1px solid rgba(255,255,255,0.15)",borderRadius:"24px",padding:"32px 28px",textAlign:"center",minWidth:"260px",boxShadow:"0 20px 60px rgba(0,0,0,0.5)"},
-  modalTitle:{margin:"0 0 16px",fontSize:"18px",fontWeight:"700",color:"rgba(255,255,255,0.85)"},
-  btn:{padding:"8px 16px",borderRadius:"20px",border:"none",cursor:"pointer",color:"#fff",fontSize:"13px",fontWeight:"600"},
-  sm:{width:"32px",height:"32px",borderRadius:"50%",border:"none",cursor:"pointer",color:"#fff",fontSize:"14px",display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(255,255,255,0.1)"},
-  row:{display:"flex",gap:"8px",justifyContent:"center",flexWrap:"wrap",marginTop:"14px"},
-  finishBtn:{width:"100%",padding:"14px",borderRadius:"16px",border:"none",cursor:"pointer",color:"#fff",fontSize:"15px",fontWeight:"700",boxShadow:"0 4px 20px rgba(0,0,0,0.3)"},
+const S = {
+  root:{minHeight:"100vh",background:"#0a0a14",fontFamily:"'Inter',system-ui,sans-serif",color:"#fff",position:"relative",overflowX:"hidden"},
+  b1:{position:"fixed",top:"-120px",left:"-80px",width:420,height:420,borderRadius:"50%",background:"radial-gradient(circle,rgba(129,140,248,0.08) 0%,transparent 65%)",pointerEvents:"none",zIndex:0},
+  b2:{position:"fixed",bottom:"-60px",right:"-60px",width:360,height:360,borderRadius:"50%",background:"radial-gradient(circle,rgba(251,113,133,0.06) 0%,transparent 65%)",pointerEvents:"none",zIndex:0},
+  b3:{position:"fixed",top:"45%",left:"50%",transform:"translate(-50%,-50%)",width:500,height:180,borderRadius:"50%",background:"radial-gradient(ellipse,rgba(52,211,153,0.04) 0%,transparent 70%)",pointerEvents:"none",zIndex:0},
+  wrap:{position:"relative",zIndex:1,maxWidth:720,margin:"0 auto",padding:"24px 16px 100px"},
+  title:{fontSize:"clamp(22px,5vw,32px)",fontWeight:900,margin:0,letterSpacing:"-0.03em",background:"linear-gradient(135deg,#818cf8 0%,#f472b6 50%,#34d399 100%)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"},
+  tabs:{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(145px,1fr))",gap:8},
+  tab:{display:"flex",flexDirection:"column",alignItems:"center",gap:3,padding:"20px 10px",border:"1px solid rgba(255,255,255,0.06)",borderRadius:18,cursor:"pointer",transition:"all 0.2s",backdropFilter:"blur(20px)",background:"rgba(255,255,255,0.02)"},
+  watch:{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:12,background:"rgba(255,255,255,0.03)",backdropFilter:"blur(24px)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:18,padding:"18px 20px"},
+  wLabel:{margin:"0 0 2px",fontSize:10,color:"rgba(255,255,255,0.35)",letterSpacing:"0.1em",textTransform:"uppercase",fontWeight:600},
+  wTime:{margin:0,fontSize:36,fontWeight:800,fontFamily:"'JetBrains Mono',monospace",letterSpacing:"1px"},
+  card:{background:"rgba(255,255,255,0.03)",backdropFilter:"blur(20px)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:16,padding:14},
+  cardHead:{display:"flex",alignItems:"flex-start",gap:12},
+  exName:{margin:"0 0 2px",fontSize:14,fontWeight:700,color:"#f0f0f0",letterSpacing:"-0.01em"},
+  exMeta:{margin:0,fontSize:11,color:"rgba(255,255,255,0.33)"},
+  infoBtn:{width:28,height:28,borderRadius:"50%",border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",cursor:"pointer",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.15s"},
+  desc:{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.05)",borderRadius:12,padding:"10px 12px",margin:"10px 0 6px"},
+  descTxt:{margin:0,fontSize:12,lineHeight:1.7,color:"rgba(255,255,255,0.55)"},
+  exTimer:{position:"relative",height:38,background:"rgba(255,255,255,0.04)",borderRadius:10,margin:"8px 0 2px",display:"flex",alignItems:"center",padding:"0 10px",gap:8,overflow:"hidden",border:"1px solid rgba(255,255,255,0.05)"},
+  timerBar:{position:"absolute",left:0,top:0,height:"100%",borderRadius:10,opacity:0.12,transition:"width 0.9s linear"},
+  timerTxt:{fontFamily:"'JetBrains Mono',monospace",fontWeight:700,fontSize:14,color:"#fff",zIndex:1,letterSpacing:"1px"},
+  sets:{display:"flex",flexWrap:"wrap",gap:6,alignItems:"flex-end",marginTop:12},
+  dot:{width:38,height:38,borderRadius:11,border:"1px solid",cursor:"pointer",fontSize:12,fontWeight:700,color:"#fff",transition:"all 0.18s cubic-bezier(.4,0,.2,1)",display:"flex",alignItems:"center",justifyContent:"center"},
+  restBtn:{padding:"6px 14px",borderRadius:18,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",cursor:"pointer",fontSize:11,fontWeight:600,marginLeft:"auto",color:"rgba(255,255,255,0.6)",display:"flex",alignItems:"center",gap:4,transition:"all 0.15s"},
+  noteBtn:{padding:"2px 6px",borderRadius:6,border:"1px solid rgba(255,255,255,0.08)",background:"rgba(255,255,255,0.03)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",minWidth:30,height:20,transition:"all 0.15s"},
+  noteInput:{width:70,padding:"3px 6px",borderRadius:6,border:"1px solid rgba(255,255,255,0.15)",background:"rgba(255,255,255,0.06)",color:"#fff",fontSize:10,outline:"none",fontFamily:"'JetBrains Mono',monospace"},
+  overlay:{position:"fixed",inset:0,zIndex:1000,background:"rgba(0,0,0,0.65)",backdropFilter:"blur(12px)",display:"flex",alignItems:"center",justifyContent:"center"},
+  modalCard:{background:"rgba(16,16,28,0.95)",backdropFilter:"blur(32px)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:24,padding:"32px 24px",textAlign:"center",minWidth:260,boxShadow:"0 24px 80px rgba(0,0,0,0.6)"},
+  modalTitle:{margin:"0 0 16px",fontSize:14,fontWeight:700,color:"rgba(255,255,255,0.6)",letterSpacing:"0.1em",textTransform:"uppercase"},
+  btn:{padding:"8px 16px",borderRadius:11,border:"none",cursor:"pointer",color:"#fff",fontSize:12,fontWeight:600,display:"inline-flex",alignItems:"center",gap:5,transition:"all 0.15s"},
+  sm:{width:32,height:32,borderRadius:9,border:"none",cursor:"pointer",color:"#fff",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(255,255,255,0.07)",transition:"all 0.15s"},
+  finishBtn:{width:"100%",padding:14,borderRadius:14,border:"none",cursor:"pointer",color:"#fff",fontSize:14,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:8,transition:"all 0.2s",marginTop:8},
+  bottomNav:{position:"fixed",bottom:0,left:0,right:0,zIndex:100,background:"rgba(10,10,20,0.92)",backdropFilter:"blur(20px)",borderTop:"1px solid rgba(255,255,255,0.06)",display:"flex",justifyContent:"center",gap:48,padding:"8px 0 12px",paddingBottom:"max(12px, env(safe-area-inset-bottom))"},
+  navBtn:{display:"flex",flexDirection:"column",alignItems:"center",gap:1,background:"none",border:"none",cursor:"pointer",padding:"4px 16px",transition:"all 0.15s"},
 };
