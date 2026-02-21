@@ -2,7 +2,7 @@ import { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.workouttracker.app',
-  appName: 'Workout Tracker',
+  appName: 'Vitto Gym Tracker',
   webDir: 'dist',
   server: {
     androidScheme: 'https'
