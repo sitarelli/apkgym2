@@ -653,8 +653,8 @@ function WorkoutSession({ session, onFinish }: { session: Session; onFinish: () 
   };
 
   const handleFinish = () => {
-    const exercises = [];
-    session.groups.forEach((group, gIdx) => {
+    const exercises: ExerciseRecord[] = [];
+    (session.groups ?? []).forEach((group, gIdx) => {
       group.exercises.forEach((ex, eIdx) => {
         exercises.push({
           name: ex.name,
@@ -699,7 +699,7 @@ function WorkoutSession({ session, onFinish }: { session: Session; onFinish: () 
         </div>
       </div>
 
-      {session.groups.map((g, gIdx)=>(
+      {(session.groups ?? []).map((g, gIdx)=>(
         <Group key={g.name} group={g} color={session.color}
           completedSets={completedSets[gIdx]}
           onSetComplete={(exIdx, setIdx) => handleSetComplete(gIdx, exIdx, setIdx)} />
@@ -799,7 +799,7 @@ function ExtraActivitiesSession({ session, onFinish }: { session: Session; onFin
       <p style={{fontSize:"15px",color:"rgba(255,255,255,0.65)",margin:"0 0 8px"}}>
         Seleziona un'attività per iniziare il timer:
       </p>
-      {session.activities.map(activity => (
+      {(session.activities ?? []).map(activity => (
         <div key={activity.name} style={{...S.card, borderColor:`${session.color}44`, cursor:"pointer"}}
           onClick={() => handleStart(activity)}>
           <div style={{display:"flex",alignItems:"center",gap:"16px"}}>
@@ -844,13 +844,13 @@ function Dashboard({ onBack }: { onBack: () => void }) {
   };
 
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files[0];
+    const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (ev: ProgressEvent<FileReader>) => {
       try {
         const parsed = JSON.parse(ev.target?.result as string);
-        let workouts = [];
+        let workouts: WorkoutRecord[] = [];
         if (Array.isArray(parsed)) {
           workouts = parsed;
         } else if (parsed.workouts && Array.isArray(parsed.workouts)) {
@@ -861,9 +861,11 @@ function Dashboard({ onBack }: { onBack: () => void }) {
         }
         // Merge: skip duplicates by id
         const existing = getWorkoutHistory();
-        const existingIds = new Set(existing.map(w => w.id));
-        const newOnes = workouts.filter(w => !existingIds.has(w.id));
-        const merged = [...existing, ...newOnes].sort((a, b) => new Date(a.date) - new Date(b.date));
+        const existingIds = new Set(existing.map((w: WorkoutRecord) => w.id));
+        const newOnes = workouts.filter((w: WorkoutRecord) => !existingIds.has(w.id));
+        const merged = [...existing, ...newOnes].sort((a: WorkoutRecord, b: WorkoutRecord) => 
+          new Date(a.date).getTime() - new Date(b.date).getTime()
+        );
         localStorage.setItem("workoutHistory", JSON.stringify(merged));
         setImportMsg({ ok: true, text: `✅ Importati ${newOnes.length} allenamenti (${workouts.length - newOnes.length} già presenti)` });
         setTimeout(() => window.location.reload(), 1800);
