@@ -206,15 +206,80 @@ function useStopwatch() {
 // REST TIMER MODAL
 // ═══════════════════════════════════════════════════════════════════════════
 
+const REST_TIMER_KEY = "restTimerState";
+
+function saveRestTimer(endTs: number, total: number): void {
+  localStorage.setItem(REST_TIMER_KEY, JSON.stringify({ endTimestamp: endTs, totalSeconds: total }));
+}
+function clearRestTimer(): void { localStorage.removeItem(REST_TIMER_KEY); }
+function getRestTimer(): { endTimestamp: number; totalSeconds: number } | null {
+  try { const r = localStorage.getItem(REST_TIMER_KEY); return r ? JSON.parse(r) : null; } catch { return null; }
+}
+
+function fireRestNotification(): void {
+  if ("Notification" in window && Notification.permission === "granted") {
+    new Notification("💪 Recupero completato!", { body: "È ora della prossima serie!", tag: "rest-timer" });
+  }
+}
+
 function RestTimerModal({ seconds, onClose }: { seconds: number; onClose: () => void }) {
-  const [time, setTime] = useState<number>(seconds);
-  const [running, setRunning] = useState<boolean>(true);
+  // Restore from persisted state if available
+  const calcRemaining = (): number => {
+    const state = getRestTimer();
+    if (state && state.totalSeconds === seconds) {
+      const rem = Math.ceil((state.endTimestamp - Date.now()) / 1000);
+      return Math.max(0, rem);
+    }
+    return seconds;
+  };
+
+  const [time, setTime] = useState<number>(calcRemaining);
+  const [running, setRunning] = useState<boolean>(false);
+  const [notifGranted, setNotifGranted] = useState<boolean>(
+    typeof Notification !== "undefined" && Notification.permission === "granted"
+  );
+  const notifiedRef = useRef<boolean>(false);
   const ref = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // On mount: request notifications, auto-start
   useEffect(() => {
-    if (running && time > 0) ref.current = setInterval(() => setTime(t => t - 1), 1000);
-    else if (time === 0) setRunning(false);
+    if ("Notification" in window && Notification.permission !== "denied") {
+      Notification.requestPermission().then(r => setNotifGranted(r === "granted"));
+    }
+    const state = getRestTimer();
+    if (state && state.totalSeconds === seconds && state.endTimestamp > Date.now()) {
+      setRunning(true); // Restore running timer
+    } else {
+      // Fresh start — save end timestamp
+      saveRestTimer(Date.now() + seconds * 1000, seconds);
+      setRunning(true);
+    }
+  }, []);
+
+  // Tick using wall-clock time (accurate even when throttled/background)
+  useEffect(() => {
+    if (!running) { if (ref.current) clearInterval(ref.current); return; }
+    ref.current = setInterval(() => {
+      const state = getRestTimer();
+      if (!state) { setRunning(false); return; }
+      const rem = Math.ceil((state.endTimestamp - Date.now()) / 1000);
+      if (rem <= 0) {
+        setTime(0); setRunning(false); clearRestTimer();
+        if (!notifiedRef.current) { notifiedRef.current = true; fireRestNotification(); }
+      } else { setTime(rem); }
+    }, 250); // 250ms for smooth updates
     return () => { if (ref.current) clearInterval(ref.current); };
-  }, [running, time]);
+  }, [running]);
+
+  const handlePause = () => { clearRestTimer(); setRunning(false); };
+  const handleResume = () => {
+    const t = time === 0 ? seconds : time;
+    if (time === 0) setTime(seconds);
+    saveRestTimer(Date.now() + t * 1000, seconds);
+    notifiedRef.current = false;
+    setRunning(true);
+  };
+  const handleReset = () => { clearRestTimer(); setRunning(false); notifiedRef.current = false; setTime(seconds); };
 
   const pct = (time / seconds) * 100;
   const C = 2 * Math.PI * 54;
@@ -225,21 +290,31 @@ function RestTimerModal({ seconds, onClose }: { seconds: number; onClose: () => 
     <div style={S.overlay} onClick={onClose}>
       <div style={S.modalCard} onClick={(e: React.MouseEvent) => e.stopPropagation()}>
         <p style={S.modalTitle}>Recupero</p>
+        {!notifGranted && (
+          <p style={{ fontSize: 11, color: "rgba(255,200,100,0.8)", margin: "-8px 0 10px", textAlign: "center" as const }}>
+            ⚠️ Abilita le notifiche per l'allarme
+          </p>
+        )}
         <svg width="140" height="140" viewBox="0 0 140 140">
           <circle cx="70" cy="70" r="54" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="7" />
           <circle cx="70" cy="70" r="54" fill="none" stroke={col} strokeWidth="7" strokeLinecap="round"
             strokeDasharray={C} strokeDashoffset={C * (1 - pct / 100)} transform="rotate(-90 70 70)"
-            style={{ transition: "stroke-dashoffset 0.3s linear, stroke 0.3s" }} />
+            style={{ transition: "stroke-dashoffset 0.25s linear, stroke 0.3s" }} />
           <text x="70" y="76" textAnchor="middle" fill="white" fontSize="28" fontWeight="700" fontFamily="monospace">{fmt(time)}</text>
         </svg>
         <div style={{ display: "flex", gap: "8px", justifyContent: "center", marginTop: "16px" }}>
           {running
-            ? <Btn bg="rgba(255,255,255,0.08)" onClick={() => setRunning(false)}><Pause size={14} /> Pausa</Btn>
-            : <Btn bg={`${col}55`} onClick={() => { if (done) { setTime(seconds) } setRunning(true) }}><Play size={14} /> {done ? "Nuovo" : "Riprendi"}</Btn>}
-          <Btn bg="rgba(255,255,255,0.06)" onClick={() => { setRunning(false); setTime(seconds) }}><RotateCcw size={14} /></Btn>
+            ? <Btn bg="rgba(255,255,255,0.08)" onClick={handlePause}><Pause size={14} /> Pausa</Btn>
+            : <Btn bg={`${col}55`} onClick={handleResume}><Play size={14} /> {done ? "Nuovo" : "Riprendi"}</Btn>}
+          <Btn bg="rgba(255,255,255,0.06)" onClick={handleReset}><RotateCcw size={14} /></Btn>
           <Btn bg="rgba(255,255,255,0.04)" onClick={onClose}><X size={14} /></Btn>
         </div>
         {done && <p style={{ color: "#34d399", fontWeight: 700, marginTop: 12, fontSize: 14 }}>✅ Recupero completato!</p>}
+        {running && !done && (
+          <p style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", marginTop: 10 }}>
+            Il timer continua anche a schermo spento
+          </p>
+        )}
       </div>
     </div>
   );
