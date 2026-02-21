@@ -1,13 +1,13 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Dumbbell, Flame, Timer, ChevronDown, ChevronUp,
   RotateCcw, Play, Pause, CheckCircle2, Info, X,
   BarChart3, ArrowLeft, Trash2, Download, Upload,
   Database, Zap, Trophy, Clock, TrendingUp, Calendar,
-  Home, Activity, PenLine, Weight, Target, Award,
-  ChevronRight, Minus, Plus, Edit3, Save, Bell, BellOff
+  Home, Activity, PenLine,
+  ChevronRight, Save
 } from "lucide-react";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LineChart, Line, Area, AreaChart } from "recharts";
+import { XAxis, YAxis, Tooltip, ResponsiveContainer, Area, AreaChart } from "recharts";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPES
