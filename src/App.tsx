@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
+import type { CSSProperties } from "react";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -397,7 +398,7 @@ function fireRestNotification(): void {
   }
 }
 
-function fmt(s) {
+function fmt(s: number): string {
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
   const sec = s % 60;
@@ -425,7 +426,7 @@ function deleteWorkout(id: string): void {
 // COMPONENTS — Modals & Timers
 // ═══════════════════════════════════════════════════════════════════════════
 
-function RestTimerModal({ seconds, onClose }) {
+function RestTimerModal({ seconds, onClose }: { seconds: number; onClose: () => void }) {
   // Calculate initial remaining time from persisted state (background-aware)
   const calcRemaining = () => {
     const state = getRestTimerState();
@@ -632,7 +633,7 @@ function WorkoutSession({ session, onFinish }: { session: Session; onFinish: () 
   const [elapsed, setElapsed] = useState(0);
   const [running, setRunning] = useState(false);
   const [completedSets, setCompletedSets] = useState(
-    () => session.groups.map(g => g.exercises.map(() => 0))
+    () => (session.groups ?? []).map(g => g.exercises.map(() => 0))
   );
   const ref = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -642,7 +643,7 @@ function WorkoutSession({ session, onFinish }: { session: Session; onFinish: () 
     return ()=>{ if(ref.current) clearInterval(ref.current); };
   },[running]);
 
-  const handleSetComplete = (groupIdx, exIdx, setIdx) => {
+  const handleSetComplete = (groupIdx: number, exIdx: number, setIdx: number) => {
     setCompletedSets(prev => {
       const next = prev.map(g => [...g]);
       const current = next[groupIdx][exIdx];
@@ -842,13 +843,13 @@ function Dashboard({ onBack }: { onBack: () => void }) {
     URL.revokeObjectURL(url);
   };
 
-  const handleImport = (e) => {
+  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (ev) => {
+    reader.onload = (ev: ProgressEvent<FileReader>) => {
       try {
-        const parsed = JSON.parse(ev.target.result);
+        const parsed = JSON.parse(ev.target?.result as string);
         let workouts = [];
         if (Array.isArray(parsed)) {
           workouts = parsed;
@@ -1100,7 +1101,7 @@ export default function App() {
   const [view, setView] = useState("tabs"); // tabs | session | dashboard
   const [activeSession, setActiveSession] = useState(0);
 
-  const handleSessionSelect = (idx) => {
+  const handleSessionSelect = (idx: number) => {
     setActiveSession(idx);
     setView("session");
   };
@@ -1187,7 +1188,7 @@ export default function App() {
 // STYLES
 // ═══════════════════════════════════════════════════════════════════════════
 
-const S = {
+const S: Record<string, CSSProperties> = {
   root:{minHeight:"100vh",background:"linear-gradient(135deg,#0a0a1a 0%,#0d1224 50%,#0a0a1a 100%)",fontFamily:"'Segoe UI',system-ui,sans-serif",color:"#fff",position:"relative",overflowX:"hidden"},
   b1:{position:"fixed",top:"-120px",left:"-120px",width:"420px",height:"420px",borderRadius:"50%",background:"radial-gradient(circle,rgba(108,99,255,0.18) 0%,transparent 70%)",pointerEvents:"none",zIndex:0},
   b2:{position:"fixed",bottom:"-100px",right:"-100px",width:"380px",height:"380px",borderRadius:"50%",background:"radial-gradient(circle,rgba(255,107,107,0.15) 0%,transparent 70%)",pointerEvents:"none",zIndex:0},
