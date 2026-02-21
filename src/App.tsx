@@ -827,20 +827,60 @@ function Dashboard({ onBack }: { onBack: () => void }) {
   const [importMsg, setImportMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleExport = () => {
+  const handleExport = async () => {
     const data = {
       exportDate: new Date().toISOString(),
       appVersion: "v3",
       workouts: history,
     };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
+    const jsonString = JSON.stringify(data, null, 2);
     const dateStr = new Date().toISOString().slice(0, 10);
-    a.href = url;
-    a.download = `workout_backup_${dateStr}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const fileName = `workout_backup_${dateStr}.json`;
+
+    // Detect if running inside Capacitor (native app) or browser
+    const isNative = !!(window as any).Capacitor?.isNativePlatform?.();
+
+    if (isNative) {
+      try {
+        // Dynamically import Capacitor plugins (only available in native build)
+        const { Filesystem, Directory } = await import('@capacitor/filesystem');
+        const { Share } = await import('@capacitor/share');
+
+        // Write file to cache directory
+        await Filesystem.writeFile({
+          path: fileName,
+          data: jsonString,
+          directory: Directory.Cache,
+          encoding: 'utf8' as any,
+        });
+
+        // Get the full URI of the saved file
+        const uriResult = await Filesystem.getUri({
+          path: fileName,
+          directory: Directory.Cache,
+        });
+
+        // Open native share/save dialog
+        await Share.share({
+          title: 'Backup Allenamenti',
+          text: `Backup del ${dateStr}`,
+          url: uriResult.uri,
+          dialogTitle: 'Salva o condividi il backup',
+        });
+      } catch (err) {
+        console.error('Export error:', err);
+        alert('Errore durante il salvataggio. Riprova.');
+      }
+    } else {
+      // Browser fallback (StackBlitz, desktop)
+      const blob = new Blob([jsonString], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
   };
 
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
