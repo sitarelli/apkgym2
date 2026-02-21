@@ -37,12 +37,14 @@ jobs:
             "appId": "com.workouttracker.app",
             "appName": "Vitto Gym Tracker",
             "webDir": "dist",
-            "bundledWebRuntime": false,
             "server": {
-              "androidScheme": "https"
+              "androidScheme": "https",
+              "hostname": "app",
+              "cleartext": false
             },
             "android": {
-              "allowMixedContent": false
+              "allowMixedContent": false,
+              "webContentsDebuggingEnabled": false
             }
           }
           EOF
@@ -51,6 +53,21 @@ jobs:
         run: |
           npx cap add android
           npx cap sync android
+
+      - name: Force cache invalidation on update
+        run: |
+          # Inject build timestamp into Android strings so WebView cache is busted
+          BUILD_TIME=$(date +%s)
+          STRINGS_FILE="android/app/src/main/res/values/strings.xml"
+          if [ -f "$STRINGS_FILE" ]; then
+            sed -i "s|</resources>|    <string name=\"build_timestamp\">${BUILD_TIME}</string>\n</resources>|" "$STRINGS_FILE"
+          fi
+          
+          # Set versionCode = timestamp-based so Android always sees a new version
+          BUILD_GRADLE="android/app/build.gradle"
+          VERSION_CODE=$(date +%Y%m%d%H)
+          sed -i "s/versionCode [0-9]*/versionCode ${VERSION_CODE}/" "$BUILD_GRADLE"
+          echo "✅ versionCode set to ${VERSION_CODE}"
 
       - name: Generate App Icons (if icon.png exists)
         run: |
@@ -64,13 +81,13 @@ jobs:
             echo "No icon.png found. Using default icon."
           fi
 
-      - name: Fix Android Manifest - Force Landscape
+      - name: Fix Android Manifest - Portrait mode
         run: |
           MANIFEST=android/app/src/main/AndroidManifest.xml
           sed -i 's/android:name="\.MainActivity"/android:name=".MainActivity" android:screenOrientation="portrait"/' "$MANIFEST"
           echo "✅ Manifest updated for portrait mode"
 
-      - name: Create styles.xml for Fullscreen Theme
+      - name: Create styles.xml for Theme
         run: |
           mkdir -p android/app/src/main/res/values
           cat > android/app/src/main/res/values/styles.xml << 'EOF'
@@ -94,13 +111,8 @@ jobs:
         run: |
           MAIN_ACTIVITY=$(find android -name "MainActivity.java" | head -1)
           echo "MainActivity found: $MAIN_ACTIVITY"
-          
-          # Add imports
           sed -i '/^package /a import android.view.WindowManager;' "$MAIN_ACTIVITY"
-          
-          # Inject keep screen on flag
           sed -i 's/super\.onCreate(savedInstanceState);/super.onCreate(savedInstanceState);\n\n        \/\/ Keep screen on during workout\n        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);/' "$MAIN_ACTIVITY"
-          
           echo "✅ MainActivity updated with KEEP_SCREEN_ON"
 
       - name: Fix Kotlin Duplicate Classes
@@ -146,4 +158,3 @@ jobs:
           files: android/app/build/outputs/apk/debug/app-debug.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
