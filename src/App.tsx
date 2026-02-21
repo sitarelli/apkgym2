@@ -1,10 +1,68 @@
 import { useState, useEffect, useRef } from "react";
 
 // ═══════════════════════════════════════════════════════════════════════════
+// TYPES
+// ═══════════════════════════════════════════════════════════════════════════
+
+interface ExerciseRecord {
+  name: string;
+  setsCompleted: number;
+  setsTotal: number;
+  reps: string;
+}
+
+interface WorkoutRecord {
+  id: string;
+  date: string;
+  sessionId: number;
+  sessionName: string;
+  activityType?: string;
+  duration: number;
+  completed: boolean;
+  exercises: ExerciseRecord[];
+  totalSets: number;
+  completedSets: number;
+}
+
+interface Exercise {
+  name: string;
+  sets: number;
+  reps: string;
+  rest: number;
+  description: string;
+  isTime?: boolean;
+  duration?: number;
+}
+
+interface ExerciseGroup {
+  name: string;
+  icon: string;
+  exercises: Exercise[];
+}
+
+interface Activity {
+  name: string;
+  icon: string;
+  description: string;
+}
+
+interface Session {
+  id: number;
+  label: string;
+  subtitle: string;
+  color: string;
+  glow: string;
+  icon: string;
+  type: string;
+  groups?: ExerciseGroup[];
+  activities?: Activity[];
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // DATA — Sessions 1-3 remain UNCHANGED
 // ═══════════════════════════════════════════════════════════════════════════
 
-const sessions = [
+const sessions: Session[] = [
   {
     id: 1,
     label: "Sessione 1",
@@ -283,15 +341,15 @@ const sessions = [
 // UTILITY FUNCTIONS
 // ═══════════════════════════════════════════════════════════════════════════
 
-function useTimer(initialSeconds) {
-  const [time, setTime] = useState(initialSeconds);
-  const [running, setRunning] = useState(false);
-  const intervalRef = useRef(null);
+function useTimer(initialSeconds: number) {
+  const [time, setTime] = useState<number>(initialSeconds);
+  const [running, setRunning] = useState<boolean>(false);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   useEffect(() => {
     if (running && time > 0) {
-      intervalRef.current = setInterval(() => setTime((t) => t - 1), 1000);
+      intervalRef.current = setInterval(() => setTime((t: number) => t - 1), 1000);
     } else if (time === 0) setRunning(false);
-    return () => clearInterval(intervalRef.current);
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [running, time]);
   return {
     time,
@@ -305,22 +363,22 @@ function useTimer(initialSeconds) {
 // Persistent rest timer that keeps counting even when app is in background
 const REST_TIMER_KEY = "restTimerState";
 
-function saveRestTimerState(endTimestamp, totalSeconds) {
+function saveRestTimerState(endTimestamp: number, totalSeconds: number): void {
   localStorage.setItem(REST_TIMER_KEY, JSON.stringify({ endTimestamp, totalSeconds }));
 }
 
-function clearRestTimerState() {
+function clearRestTimerState(): void {
   localStorage.removeItem(REST_TIMER_KEY);
 }
 
-function getRestTimerState() {
+function getRestTimerState(): { endTimestamp: number; totalSeconds: number } | null {
   try {
     const raw = localStorage.getItem(REST_TIMER_KEY);
     return raw ? JSON.parse(raw) : null;
   } catch { return null; }
 }
 
-async function requestNotificationPermission() {
+async function requestNotificationPermission(): Promise<boolean> {
   if (!("Notification" in window)) return false;
   if (Notification.permission === "granted") return true;
   if (Notification.permission === "denied") return false;
@@ -328,14 +386,13 @@ async function requestNotificationPermission() {
   return result === "granted";
 }
 
-function fireRestNotification() {
+function fireRestNotification(): void {
   if ("Notification" in window && Notification.permission === "granted") {
     new Notification("💪 Recupero completato!", {
       body: "È ora di iniziare la prossima serie!",
       icon: "/icon.png",
       badge: "/icon.png",
       tag: "rest-timer",
-      renotify: true,
     });
   }
 }
@@ -348,19 +405,19 @@ function fmt(s) {
   return `${m.toString().padStart(2, "0")}:${sec.toString().padStart(2, "0")}`;
 }
 
-function getWorkoutHistory() {
+function getWorkoutHistory(): WorkoutRecord[] {
   const stored = localStorage.getItem("workoutHistory");
   return stored ? JSON.parse(stored) : [];
 }
 
-function saveWorkout(workout) {
+function saveWorkout(workout: WorkoutRecord): void {
   const history = getWorkoutHistory();
   history.push(workout);
   localStorage.setItem("workoutHistory", JSON.stringify(history));
 }
 
-function deleteWorkout(id) {
-  const history = getWorkoutHistory().filter(w => w.id !== id);
+function deleteWorkout(id: string): void {
+  const history = getWorkoutHistory().filter((w: WorkoutRecord) => w.id !== id);
   localStorage.setItem("workoutHistory", JSON.stringify(history));
 }
 
@@ -384,8 +441,8 @@ function RestTimerModal({ seconds, onClose }) {
   const [notifGranted, setNotifGranted] = useState(
     typeof Notification !== "undefined" && Notification.permission === "granted"
   );
-  const notifiedRef = useRef(false);
-  const intervalRef = useRef(null);
+  const notifiedRef = useRef<boolean>(false);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // On mount: request notifications, start timer, restore state if any
   useEffect(() => {
@@ -404,7 +461,7 @@ function RestTimerModal({ seconds, onClose }) {
 
   // Tick every 250ms using wall-clock time for accuracy even when throttled
   useEffect(() => {
-    if (!running) { clearInterval(intervalRef.current); return; }
+    if (!running) { if(intervalRef.current) clearInterval(intervalRef.current); return; }
     intervalRef.current = setInterval(() => {
       const state = getRestTimerState();
       if (!state) { setRunning(false); return; }
@@ -418,7 +475,7 @@ function RestTimerModal({ seconds, onClose }) {
         setTime(remaining);
       }
     }, 250);
-    return () => clearInterval(intervalRef.current);
+    return () => { if(intervalRef.current) clearInterval(intervalRef.current); };
   }, [running]);
 
   const handlePause = () => {
@@ -491,7 +548,7 @@ function RestTimerModal({ seconds, onClose }) {
   );
 }
 
-function ExTimer({ duration }) {
+function ExTimer({ duration }: { duration: number }) {
   const { time, running, start, pause, reset } = useTimer(duration);
   const pct = (time / duration) * 100;
   const col = time <= 10 ? "#FF6B6B" : "#00D4AA";
@@ -513,7 +570,7 @@ function ExTimer({ duration }) {
 // WORKOUT SESSION COMPONENTS
 // ═══════════════════════════════════════════════════════════════════════════
 
-function ExCard({ ex, color, done, onSet }) {
+function ExCard({ ex, color, done, onSet }: { ex: Exercise; color: string; done: number; onSet: (i: number) => void }) {
   const [open, setOpen] = useState(false);
   const [showRest, setShowRest] = useState(false);
   return (
@@ -556,7 +613,7 @@ function ExCard({ ex, color, done, onSet }) {
   );
 }
 
-function Group({ group, color, completedSets, onSetComplete }) {
+function Group({ group, color, completedSets, onSetComplete }: { group: ExerciseGroup; color: string; completedSets: number[]; onSetComplete: (exIdx: number, setIdx: number) => void }) {
   return (
     <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
       <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"2px"}}>
@@ -571,18 +628,18 @@ function Group({ group, color, completedSets, onSetComplete }) {
   );
 }
 
-function WorkoutSession({ session, onFinish }) {
+function WorkoutSession({ session, onFinish }: { session: Session; onFinish: () => void }) {
   const [elapsed, setElapsed] = useState(0);
   const [running, setRunning] = useState(false);
   const [completedSets, setCompletedSets] = useState(
     () => session.groups.map(g => g.exercises.map(() => 0))
   );
-  const ref = useRef(null);
+  const ref = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(()=>{
-    if(running) ref.current=setInterval(()=>setElapsed(e=>e+1),1000);
-    else clearInterval(ref.current);
-    return ()=>clearInterval(ref.current);
+    if(running) ref.current=setInterval(()=>setElapsed((e: number)=>e+1),1000);
+    else { if(ref.current) clearInterval(ref.current); }
+    return ()=>{ if(ref.current) clearInterval(ref.current); };
   },[running]);
 
   const handleSetComplete = (groupIdx, exIdx, setIdx) => {
@@ -607,8 +664,8 @@ function WorkoutSession({ session, onFinish }) {
       });
     });
 
-    const totalSets = exercises.reduce((sum, ex) => sum + ex.setsTotal, 0);
-    const doneSets = exercises.reduce((sum, ex) => sum + ex.setsCompleted, 0);
+    const totalSets = exercises.reduce((sum: number, ex: ExerciseRecord) => sum + ex.setsTotal, 0);
+    const doneSets = exercises.reduce((sum: number, ex: ExerciseRecord) => sum + ex.setsCompleted, 0);
 
     const workout = {
       id: Date.now().toString(),
@@ -658,19 +715,19 @@ function WorkoutSession({ session, onFinish }) {
 // EXTRA ACTIVITIES SESSION
 // ═══════════════════════════════════════════════════════════════════════════
 
-function ExtraActivitiesSession({ session, onFinish }) {
-  const [activeActivity, setActiveActivity] = useState(null);
+function ExtraActivitiesSession({ session, onFinish }: { session: Session; onFinish: () => void }) {
+  const [activeActivity, setActiveActivity] = useState<Activity | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [running, setRunning] = useState(false);
-  const ref = useRef(null);
+  const ref = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(()=>{
-    if(running) ref.current=setInterval(()=>setElapsed(e=>e+1),1000);
-    else clearInterval(ref.current);
-    return ()=>clearInterval(ref.current);
+    if(running) ref.current=setInterval(()=>setElapsed((e: number)=>e+1),1000);
+    else { if(ref.current) clearInterval(ref.current); }
+    return ()=>{ if(ref.current) clearInterval(ref.current); };
   },[running]);
 
-  const handleStart = (activity) => {
+  const handleStart = (activity: Activity) => {
     setActiveActivity(activity);
     setElapsed(0);
     setRunning(true);
@@ -762,12 +819,12 @@ function ExtraActivitiesSession({ session, onFinish }) {
 // DASHBOARD
 // ═══════════════════════════════════════════════════════════════════════════
 
-function Dashboard({ onBack }) {
+function Dashboard({ onBack }: { onBack: () => void }) {
   const history = getWorkoutHistory();
   const [filter, setFilter] = useState("all"); // all, 7d, 30d, 90d, year
   const [showHistory, setShowHistory] = useState(false);
-  const [importMsg, setImportMsg] = useState(null);
-  const fileInputRef = useRef(null);
+  const [importMsg, setImportMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleExport = () => {
     const data = {
@@ -827,9 +884,9 @@ function Dashboard({ onBack }) {
     : history;
 
   const totalWorkouts = filtered.length;
-  const totalSets = filtered.reduce((sum, w) => sum + (w.completedSets || 0), 0);
+  const totalSets = filtered.reduce((sum: number, w: WorkoutRecord) => sum + (w.completedSets || 0), 0);
   const avgDuration = totalWorkouts > 0 
-    ? Math.round(filtered.reduce((sum, w) => sum + w.duration, 0) / totalWorkouts)
+    ? Math.round(filtered.reduce((sum: number, w: WorkoutRecord) => sum + w.duration, 0) / totalWorkouts)
     : 0;
 
   // Streak calculation
