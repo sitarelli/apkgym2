@@ -120,7 +120,9 @@ const sessions: Session[] = [
     groups: [
       {
         name: "Addome", icon: "🔥", exercises: [
-          { name: "Rotary Torso", sets: 3, reps: "15", rest: 60, description: "Seduto, busto bloccato. Ruota il torso contraendo obliqui. Un lato alla volta, movimento lento." },
+          { name: "Leg Raiser", sets: 3, reps: "15", rest: 60, description: "Sdraiati su panca/pavimento, mani sotto i glutei. Gambe tese, solleva a 90° e abbassa lentamente. Lombare a terra." },
+          { name: "Crunches", sets: 3, reps: "20", rest: 60, description: "Schiena a terra, ginocchia piegate. Stacca spalle dal suolo contraendo il retto. Movimento breve e controllato." },
+          { name: "Rotary Calf", sets: 3, reps: "15", rest: 60, description: "Seduto al macchinario, ginocchia sotto il cuscinetto. Solleva i talloni contraendo i polpacci. Movimento completo e controllato, mantieni un secondo al picco." },
         ]
       },
       {
@@ -130,14 +132,14 @@ const sessions: Session[] = [
         ]
       },
       {
-        name: "Cardio", icon: "🚴", exercises: [
-          { name: "Cyclette", sets: 1, reps: "10 min", rest: 0, isTime: true, duration: 600, description: "10 min intensità moderata, RPM 70-90. Recupero attivo." },
-        ]
-      },
-      {
         name: "Spalle", icon: "🏋️", exercises: [
           { name: "Croci a 90°", sets: 4, reps: "12", rest: 90, description: "Manubri ai lati, braccia laterali a 90°. Gomiti flessi, palmi in basso al picco. Peso leggero, tecnica perfetta." },
           { name: "Shoulder Press", sets: 4, reps: "15-12-10-8", rest: 120, description: "Panca con schienale, manubri altezza orecchie. Spingi su, torna giù lento. Piramidale." },
+        ]
+      },
+      {
+        name: "Cardio", icon: "🚴", exercises: [
+          { name: "Cyclette", sets: 1, reps: "10 min", rest: 0, isTime: true, duration: 600, description: "10 min intensità moderata, RPM 70-90. Recupero attivo." },
         ]
       },
     ]
@@ -147,6 +149,8 @@ const sessions: Session[] = [
     groups: [
       {
         name: "Addome / Lombare", icon: "🔥", exercises: [
+          { name: "Leg Raiser", sets: 3, reps: "15", rest: 60, description: "Sdraiati su panca/pavimento, mani sotto i glutei. Gambe tese, solleva a 90° e abbassa lentamente. Lombare a terra." },
+          { name: "Crunches", sets: 3, reps: "20", rest: 60, description: "Schiena a terra, ginocchia piegate. Stacca spalle dal suolo contraendo il retto. Movimento breve e controllato." },
           { name: "Hyperextension", sets: 3, reps: "15", rest: 60, description: "Iperestensione: anche sul cuscinetto, piedi bloccati. Scendi e risali contraendo lombari fino alla linea retta." },
         ]
       },
@@ -1123,27 +1127,6 @@ export default function App() {
             3 SESSIONI · ATTIVITÀ EXTRA
           </p>
         </div>
-
-        {lastWorkout && lastSession && (
-          <div style={{
-            ...S.card, borderColor: `${lastSession.color}20`, marginBottom: 12, cursor: "pointer",
-            background: `linear-gradient(135deg,${lastSession.color}08,transparent)`
-          }}
-            onClick={() => handleSelect(sessions.indexOf(lastSession))}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <Zap size={16} color={lastSession.color} />
-                <div>
-                  <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: lastSession.color }}>Ripeti ultima sessione</p>
-                  <p style={{ margin: "2px 0 0", fontSize: 11, color: "rgba(255,255,255,0.35)" }}>
-                    {lastSession.label} · {new Date(lastWorkout.date).toLocaleDateString("it-IT", { day: "numeric", month: "short" })}
-                  </p>
-                </div>
-              </div>
-              <ChevronRight size={18} color={lastSession.color} />
-            </div>
-          </div>
-        )}
 
         <div style={S.tabs}>
           {sessions.map((s, i) => (
