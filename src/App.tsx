@@ -1089,9 +1089,6 @@ export default function App() {
   const handleSelect = (i: number) => { setActiveSession(i); setView("session"); };
   const handleFinish = () => { refreshHistory(); setView("home"); };
 
-  const lastWorkout = history.length > 0 ? history[history.length - 1] : null;
-  const lastSession = lastWorkout ? sessions.find(s => s.id === lastWorkout.sessionId) : null;
-
   const renderView = () => {
     if (view === "dashboard") {
       return <Dashboard onBack={() => setView("home")} history={history} />;
