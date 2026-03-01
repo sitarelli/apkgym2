@@ -73,6 +73,24 @@ interface Session {
 // ═══════════════════════════════════════════════════════════════════════════
 
 const HISTORY_KEY = "workoutHistory";
+const SESSION_STATE_KEY = "activeSessionState";
+
+interface SavedSessionState {
+  sessionId: number;
+  elapsed: number;
+  completedSets: number[][];
+  notes: string[][][];
+  savedAt: number;
+}
+
+function getSavedSession(): SavedSessionState | null {
+  try { const r = localStorage.getItem(SESSION_STATE_KEY); return r ? JSON.parse(r) : null; }
+  catch { return null; }
+}
+function saveSessionState(state: SavedSessionState): void {
+  localStorage.setItem(SESSION_STATE_KEY, JSON.stringify(state));
+}
+function clearSavedSession(): void { localStorage.removeItem(SESSION_STATE_KEY); }
 
 const fmt = (s: number): string => {
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
@@ -194,8 +212,8 @@ function useTimer(init: number) {
   return { time, running, start: () => setRunning(true), pause: () => setRunning(false), reset: () => { setRunning(false); setTime(init); } };
 }
 
-function useStopwatch() {
-  const [elapsed, setElapsed] = useState<number>(0);
+function useStopwatch(initialElapsed = 0) {
+  const [elapsed, setElapsed] = useState<number>(initialElapsed);
   const [running, setRunning] = useState<boolean>(false);
   const ref = useRef<ReturnType<typeof setInterval> | null>(null);
   useEffect(() => {
@@ -457,19 +475,27 @@ function SetNoteInput({ value, onChange }: { value: string; onChange: (v: string
   useEffect(() => { if (editing && inputRef.current) inputRef.current.focus(); }, [editing]);
   if (!editing) {
     return (
-      <button onClick={() => setEditing(true)} style={{ ...S.noteBtn, color: value ? "#fbbf24" : "rgba(255,255,255,0.25)" }}>
-        {value ? <span style={{ fontSize: 11 }}>{value}</span> : <PenLine size={11} />}
+      <button onClick={() => setEditing(true)} style={{
+        ...S.noteBtn,
+        color: value ? "#fbbf24" : "rgba(255,255,255,0.25)",
+        maxWidth: 52, overflow: "hidden"
+      }}>
+        {value
+          ? <span style={{ fontSize: 10, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 44, display: "block" }}>{value}</span>
+          : <PenLine size={10} />}
       </button>
     );
   }
   return (
-    <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+    <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
       <input ref={inputRef} value={val} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setVal(e.target.value)}
-        placeholder="kg / note"
+        placeholder="kg/note"
+        onBlur={() => { onChange(val); setEditing(false); }}
         onKeyDown={(e: React.KeyboardEvent) => { if (e.key === "Enter") { onChange(val); setEditing(false) } }}
-        style={S.noteInput} />
-      <button style={{ ...S.sm, width: 26, height: 26, background: "rgba(52,211,153,0.2)" }}
-        onClick={() => { onChange(val); setEditing(false) }}><Save size={11} /></button>
+        style={{ ...S.noteInput, width: 60 }} />
+      <button style={{ ...S.sm, width: 22, height: 22, background: "rgba(52,211,153,0.2)", flexShrink: 0 }}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => { onChange(val); setEditing(false) }}><Save size={10} /></button>
     </div>
   );
 }
@@ -504,7 +530,7 @@ function ExCard({ ex, color, done, onSet, notes, onNote }: {
           </div>
         )}
         {ex.isTime && ex.duration && <ExTimer duration={ex.duration} />}
-        <div style={S.sets}>
+        <div style={{ ...S.sets, alignItems: "flex-start" }}>
           {Array.from({ length: ex.sets }).map((_, i) => (
             <div key={i} style={{ display: "flex", flexDirection: "column" as const, alignItems: "center", gap: 3 }}>
               <button
@@ -558,13 +584,22 @@ function Group({ group, color, completedSets, onSetComplete, notes, onNote }: {
 // ═══════════════════════════════════════════════════════════════════════════
 
 function WorkoutSession({ session, onFinish }: { session: Session; onFinish: () => void }) {
-  const { elapsed, running, setRunning, reset } = useStopwatch();
+  // Restore saved state if same session
+  const saved = getSavedSession();
+  const hasSaved = saved && saved.sessionId === session.id;
+
+  const { elapsed, running, setRunning, reset } = useStopwatch(hasSaved ? saved.elapsed : 0);
   const [completedSets, setCompletedSets] = useState<number[][]>(
-    () => (session.groups ?? []).map(g => g.exercises.map(() => 0))
+    () => hasSaved ? saved.completedSets : (session.groups ?? []).map(g => g.exercises.map(() => 0))
   );
   const [notes, setNotes] = useState<string[][][]>(
-    () => (session.groups ?? []).map(g => g.exercises.map(ex => Array(ex.sets).fill("")))
+    () => hasSaved ? saved.notes : (session.groups ?? []).map(g => g.exercises.map(ex => Array(ex.sets).fill("")))
   );
+
+  // Auto-save whenever completedSets, notes or elapsed changes
+  useEffect(() => {
+    saveSessionState({ sessionId: session.id, elapsed, completedSets, notes, savedAt: Date.now() });
+  }, [elapsed, completedSets, notes]);
 
   const handleSet = (gIdx: number, eIdx: number, sIdx: number) => {
     setCompletedSets(prev => {
@@ -606,6 +641,7 @@ function WorkoutSession({ session, onFinish }: { session: Session; onFinish: () 
     const prev = getHistory();
     prev.push(workout);
     saveHistory(prev);
+    clearSavedSession();
     onFinish();
   };
 
@@ -1075,6 +1111,7 @@ export default function App() {
   const [view, setView] = useState("home");
   const [activeSession, setActiveSession] = useState(0);
   const [history, setHistory] = useState<WorkoutRecord[]>([]);
+  const [resumePrompt, setResumePrompt] = useState<{ sessionIdx: number; elapsed: number } | null>(null);
 
   useEffect(() => {
     const link = document.createElement("link");
@@ -1082,12 +1119,32 @@ export default function App() {
     link.rel = "stylesheet"; document.head.appendChild(link);
     setHistory(getHistory());
     createNotificationChannel();
+    // Check for saved session
+    const saved = getSavedSession();
+    if (saved) {
+      const idx = sessions.findIndex(s => s.id === saved.sessionId);
+      if (idx !== -1) {
+        setResumePrompt({ sessionIdx: idx, elapsed: saved.elapsed });
+      }
+    }
   }, []);
 
   const refreshHistory = () => { setHistory(getHistory()); };
 
   const handleSelect = (i: number) => { setActiveSession(i); setView("session"); };
   const handleFinish = () => { refreshHistory(); setView("home"); };
+
+  const handleResume = () => {
+    if (!resumePrompt) return;
+    setActiveSession(resumePrompt.sessionIdx);
+    setResumePrompt(null);
+    setView("session");
+  };
+
+  const handleDiscardSaved = () => {
+    clearSavedSession();
+    setResumePrompt(null);
+  };
 
   const renderView = () => {
     if (view === "dashboard") {
@@ -1160,6 +1217,25 @@ export default function App() {
   return (
     <div style={S.root}>
       <div style={S.b1} /><div style={S.b2} /><div style={S.b3} />
+      {resumePrompt && (
+        <div style={S.overlay}>
+          <div style={{ ...S.modalCard, minWidth: 290, textAlign: "left" as const }}>
+            <p style={{ margin: "0 0 6px", fontSize: 13, fontWeight: 700, color: "rgba(255,255,255,0.5)", letterSpacing: "0.08em", textTransform: "uppercase" as const }}>Sessione in corso</p>
+            <p style={{ margin: "0 0 18px", fontSize: 16, fontWeight: 800, color: "#fff" }}>
+              {sessions[resumePrompt.sessionIdx].icon} {sessions[resumePrompt.sessionIdx].label}
+            </p>
+            <p style={{ margin: "0 0 20px", fontSize: 12, color: "rgba(255,255,255,0.4)" }}>
+              Hai una sessione salvata ({fmt(resumePrompt.elapsed)} trascorsi). Vuoi riprenderla?
+            </p>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button style={{ ...S.btn, flex: 1, justifyContent: "center", background: sessions[resumePrompt.sessionIdx].color, fontSize: 13, fontWeight: 700 }}
+                onClick={handleResume}><Play size={14} /> Riprendi</button>
+              <button style={{ ...S.btn, background: "rgba(255,255,255,0.06)", fontSize: 13 }}
+                onClick={handleDiscardSaved}><Trash2 size={14} /> Scarta</button>
+            </div>
+          </div>
+        </div>
+      )}
       <div style={S.wrap}>
         {renderView()}
       </div>
@@ -1204,8 +1280,8 @@ const S: Record<string, React.CSSProperties> = {
   sets: { display: "flex", flexWrap: "wrap", gap: 6, alignItems: "flex-end", marginTop: 12 },
   dot: { width: 38, height: 38, borderRadius: 11, border: "1px solid", cursor: "pointer", fontSize: 12, fontWeight: 700, color: "#fff", transition: "all 0.18s cubic-bezier(.4,0,.2,1)", display: "flex", alignItems: "center", justifyContent: "center" },
   restBtn: { padding: "6px 14px", borderRadius: 18, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.04)", cursor: "pointer", fontSize: 11, fontWeight: 600, marginLeft: "auto", color: "rgba(255,255,255,0.6)", display: "flex", alignItems: "center", gap: 4, transition: "all 0.15s" },
-  noteBtn: { padding: "2px 6px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.03)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", minWidth: 30, height: 20, transition: "all 0.15s" },
-  noteInput: { width: 70, padding: "3px 6px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.15)", background: "rgba(255,255,255,0.06)", color: "#fff", fontSize: 10, outline: "none", fontFamily: "'JetBrains Mono',monospace" },
+  noteBtn: { padding: "2px 5px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.03)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", minWidth: 28, height: 18, transition: "all 0.15s", maxWidth: 52, overflow: "hidden" },
+  noteInput: { width: 60, padding: "3px 5px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.15)", background: "rgba(255,255,255,0.06)", color: "#fff", fontSize: 10, outline: "none", fontFamily: "'JetBrains Mono',monospace" },
   overlay: { position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.65)", backdropFilter: "blur(12px)", display: "flex", alignItems: "center", justifyContent: "center" },
   modalCard: { background: "rgba(16,16,28,0.95)", backdropFilter: "blur(32px)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 24, padding: "32px 24px", textAlign: "center", minWidth: 260, boxShadow: "0 24px 80px rgba(0,0,0,0.6)" },
   modalTitle: { margin: "0 0 16px", fontSize: 14, fontWeight: 700, color: "rgba(255,255,255,0.6)", letterSpacing: "0.1em", textTransform: "uppercase" },
