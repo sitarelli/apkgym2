@@ -9,6 +9,27 @@ import {
 } from "lucide-react";
 import { XAxis, YAxis, Tooltip, ResponsiveContainer, Area, AreaChart } from "recharts";
 
+// Inject global CSS animations once
+const ANIM_STYLE = `
+@keyframes glowRotate {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+@keyframes glowPulse {
+  0%, 100% { opacity: 0.55; transform: scale(1); }
+  50%       { opacity: 0.85; transform: scale(1.04); }
+}
+@keyframes titleFloat {
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(-2px); }
+}
+`;
+if (typeof document !== "undefined" && !document.getElementById("vitto-anim")) {
+  const s = document.createElement("style"); s.id = "vitto-anim"; s.textContent = ANIM_STYLE;
+  document.head.appendChild(s);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════
@@ -98,6 +119,70 @@ function getHistory(): WorkoutRecord[] {
 
 function saveHistory(data: WorkoutRecord[]): void {
   localStorage.setItem(HISTORY_KEY, JSON.stringify(data));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CONFETTI
+// ═══════════════════════════════════════════════════════════════════════════
+
+function ConfettiCanvas({ active, onDone }: { active: boolean; onDone: () => void }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const frameRef = useRef<number>(0);
+
+  useEffect(() => {
+    if (!active) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d")!;
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    const COLORS = ["#818cf8","#f472b6","#34d399","#fbbf24","#fb7185","#a78bfa","#38bdf8"];
+    const particles = Array.from({ length: 140 }, () => ({
+      x: Math.random() * canvas.width,
+      y: -10 - Math.random() * 200,
+      r: 4 + Math.random() * 6,
+      d: 1.5 + Math.random() * 3,
+      color: COLORS[Math.floor(Math.random() * COLORS.length)],
+      tilt: Math.random() * 10 - 5,
+      tiltSpeed: 0.1 + Math.random() * 0.2,
+      angle: Math.random() * Math.PI * 2,
+      spin: (Math.random() - 0.5) * 0.15,
+      shape: Math.random() > 0.5 ? "rect" : "circle",
+      opacity: 0.85 + Math.random() * 0.15,
+    }));
+
+    let tick = 0;
+    const draw = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      tick++;
+      let allGone = true;
+      particles.forEach(p => {
+        p.y += p.d;
+        p.angle += p.spin;
+        p.tilt += p.tiltSpeed;
+        if (p.y < canvas.height + 20) allGone = false;
+        ctx.save();
+        ctx.globalAlpha = p.opacity * Math.max(0, 1 - (p.y - canvas.height * 0.7) / (canvas.height * 0.3));
+        ctx.translate(p.x + Math.sin(p.angle) * 20, p.y);
+        ctx.rotate(p.tilt);
+        ctx.fillStyle = p.color;
+        if (p.shape === "circle") {
+          ctx.beginPath(); ctx.arc(0, 0, p.r, 0, Math.PI * 2); ctx.fill();
+        } else {
+          ctx.fillRect(-p.r, -p.r / 2, p.r * 2, p.r);
+        }
+        ctx.restore();
+      });
+      if (allGone || tick > 300) { cancelAnimationFrame(frameRef.current); onDone(); return; }
+      frameRef.current = requestAnimationFrame(draw);
+    };
+    frameRef.current = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(frameRef.current);
+  }, [active]);
+
+  if (!active) return null;
+  return <canvas ref={canvasRef} style={{ position: "fixed", inset: 0, zIndex: 9999, pointerEvents: "none" }} />;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -644,26 +729,36 @@ function WorkoutSession({ session, activeState, onUpdateState, onFinish }: {
     onFinish();
   };
 
+  const isNotStarted = elapsed === 0 && paused;
+
   return (
     <div style={{ display: "flex", flexDirection: "column" as const, gap: 16 }}>
       <div style={{ ...S.watch, borderColor: `${session.color}30`, boxShadow: `0 0 40px ${session.glow}` }}>
         <div>
           <p style={S.wLabel}>Durata</p>
-          <p style={{ ...S.wTime, color: session.color }}>{fmt(elapsed)}</p>
+          <p style={{ ...S.wTime, color: isNotStarted ? "rgba(255,255,255,0.2)" : session.color }}>{fmt(elapsed)}</p>
         </div>
         <div style={{ display: "flex", flexDirection: "column" as const, alignItems: "flex-end", gap: 8 }}>
           <div style={{ display: "flex", gap: 6 }}>
-            {paused
-              ? <Btn bg={`${session.color}aa`} onClick={handleResume}><Play size={14} /></Btn>
-              : <Btn bg="rgba(255,255,255,0.08)" onClick={handlePause}><Pause size={14} /></Btn>}
-            <Btn bg="rgba(251,113,133,0.2)" onClick={handleReset}><RotateCcw size={14} /></Btn>
+            {isNotStarted ? (
+              <Btn bg={session.color} style={{ fontWeight: 700, padding: "8px 18px", fontSize: 13 }} onClick={handleResume}>
+                <Play size={14} /> Inizia
+              </Btn>
+            ) : paused ? (
+              <Btn bg={`${session.color}aa`} onClick={handleResume}><Play size={14} /></Btn>
+            ) : (
+              <Btn bg="rgba(255,255,255,0.08)" onClick={handlePause}><Pause size={14} /></Btn>
+            )}
+            {!isNotStarted && <Btn bg="rgba(251,113,133,0.2)" onClick={handleReset}><RotateCcw size={14} /></Btn>}
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <div style={{ width: 80, height: 4, borderRadius: 2, background: "rgba(255,255,255,0.06)", overflow: "hidden" }}>
-              <div style={{ height: "100%", width: `${pct}%`, background: session.color, borderRadius: 2, transition: "width 0.3s" }} />
+          {!isNotStarted && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{ width: 80, height: 4, borderRadius: 2, background: "rgba(255,255,255,0.06)", overflow: "hidden" }}>
+                <div style={{ height: "100%", width: `${pct}%`, background: session.color, borderRadius: 2, transition: "width 0.3s" }} />
+              </div>
+              <span style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", fontWeight: 600 }}>{pct}%</span>
             </div>
-            <span style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", fontWeight: 600 }}>{pct}%</span>
-          </div>
+          )}
         </div>
       </div>
 
@@ -1111,6 +1206,7 @@ export default function App() {
   const [history, setHistory] = useState<WorkoutRecord[]>([]);
   // Session state lives here — survives any view change
   const [activeSess, setActiveSess] = useState<ActiveSessionState | null>(null);
+  const [showConfetti, setShowConfetti] = useState(false);
 
   useEffect(() => {
     const link = document.createElement("link");
@@ -1122,11 +1218,25 @@ export default function App() {
 
   const refreshHistory = () => setHistory(getHistory());
 
-  const startSession = (idx: number) => {
+  // idx of session the user wants to open — used for confirm-overwrite modal
+  const [pendingIdx, setPendingIdx] = useState<number | null>(null);
+
+  const openSession = (idx: number) => {
+    // Same session already active → just navigate back to it
     if (activeSess && activeSess.sessionIdx === idx) {
       setView("session");
       return;
     }
+    // Different session active → ask first
+    if (activeSess && activeSess.sessionIdx !== idx) {
+      setPendingIdx(idx);
+      return;
+    }
+    // No session active → navigate to session view; timer starts only when user hits Play
+    navigateToSession(idx);
+  };
+
+  const navigateToSession = (idx: number) => {
     const session = sessions[idx];
     setActiveSess({
       sessionIdx: idx,
@@ -1134,14 +1244,22 @@ export default function App() {
       notes: (session.groups ?? []).map(g => g.exercises.map(ex => Array(ex.sets).fill(""))),
       startMs: Date.now(),
       totalPausedMs: 0,
-      paused: false,
+      paused: true,   // ← starts PAUSED; user must press Play to begin
     });
     setView("session");
+  };
+
+  const confirmSwitch = () => {
+    if (pendingIdx === null) return;
+    setActiveSess(null);
+    navigateToSession(pendingIdx);
+    setPendingIdx(null);
   };
 
   const handleFinish = () => {
     setActiveSess(null);
     refreshHistory();
+    setShowConfetti(true);
     setView("home");
   };
 
@@ -1185,11 +1303,33 @@ export default function App() {
     return (
       <>
         <div style={{ textAlign: "center" as const, marginBottom: 28 }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, marginBottom: 6 }}>
-            <Dumbbell size={26} color="#818cf8" />
-            <h1 style={S.title}>Workout Tracker</h1>
+          {/* Glow halo behind the pill */}
+          <div style={{ position: "relative" as const, display: "inline-block", marginBottom: 8 }}>
+            <div style={{
+              position: "absolute", inset: -3, borderRadius: 24,
+              background: "linear-gradient(270deg, #818cf8, #f472b6, #34d399, #fbbf24, #818cf8)",
+              backgroundSize: "300% 300%",
+              animation: "glowRotate 5s ease infinite, glowPulse 4s ease-in-out infinite",
+              filter: "blur(8px)",
+              zIndex: 0,
+            }} />
+            <div style={{
+              position: "relative" as const, zIndex: 1,
+              display: "inline-flex", alignItems: "center", gap: 12,
+              background: "rgba(10,10,20,0.72)",
+              backdropFilter: "blur(24px)",
+              WebkitBackdropFilter: "blur(24px)",
+              border: "1px solid rgba(255,255,255,0.12)",
+              borderRadius: 20,
+              padding: "14px 28px",
+              boxShadow: "0 4px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.10)",
+              animation: "titleFloat 4s ease-in-out infinite",
+            }}>
+              <Dumbbell size={22} color="rgba(255,255,255,0.6)" />
+              <h1 style={S.title}>WORKOUT TRACKER</h1>
+            </div>
           </div>
-          <p style={{ color: "rgba(255,255,255,0.25)", fontSize: 12, margin: 0, letterSpacing: "0.06em" }}>
+          <p style={{ color: "rgba(255,255,255,0.2)", fontSize: 11, margin: 0, letterSpacing: "0.12em" }}>
             3 SESSIONI · ATTIVITÀ EXTRA
           </p>
         </div>
@@ -1244,7 +1384,7 @@ export default function App() {
             ...S.card, borderColor: `${lastSession.color}20`, marginBottom: 12, cursor: "pointer",
             background: `linear-gradient(135deg,${lastSession.color}08,transparent)`
           }}
-            onClick={() => startSession(sessions.indexOf(lastSession))}>
+            onClick={() => openSession(sessions.indexOf(lastSession))}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <Zap size={16} color={lastSession.color} />
@@ -1268,7 +1408,7 @@ export default function App() {
                 ? `linear-gradient(145deg,${s.color}25,${s.color}12)`
                 : `linear-gradient(145deg,${s.color}12,${s.color}06)`,
               borderColor: activeSess?.sessionIdx === i ? `${s.color}50` : `${s.color}25`
-            }} onClick={() => startSession(i)}>
+            }} onClick={() => openSession(i)}>
               <span style={{ fontSize: 28, marginBottom: 4 }}>{s.icon}</span>
               <span style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>{s.label}</span>
               <span style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", textAlign: "center" as const, marginTop: 1 }}>{s.subtitle}</span>
@@ -1297,6 +1437,36 @@ export default function App() {
   return (
     <div style={S.root}>
       <div style={S.b1} /><div style={S.b2} /><div style={S.b3} />
+
+      <ConfettiCanvas active={showConfetti} onDone={() => setShowConfetti(false)} />
+      {pendingIdx !== null && activeSess && (() => {
+        const current = sessions[activeSess.sessionIdx];
+        const next = sessions[pendingIdx];
+        return (
+          <div style={S.overlay}>
+            <div style={{ ...S.modalCard, textAlign: "left" as const, minWidth: 290 }}>
+              <p style={{ margin: "0 0 6px", fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.4)", letterSpacing: "0.1em", textTransform: "uppercase" as const }}>Sessione in corso</p>
+              <p style={{ margin: "0 0 10px", fontSize: 15, fontWeight: 800, color: current.color }}>
+                {current.icon} {current.label}
+              </p>
+              <p style={{ margin: "0 0 18px", fontSize: 12, color: "rgba(255,255,255,0.45)", lineHeight: 1.6 }}>
+                Vuoi iniziare <strong style={{ color: next.color }}>{next.icon} {next.label}</strong>?<br />
+                Il progresso della sessione corrente andrà perso.
+              </p>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button style={{ ...S.btn, flex: 1, justifyContent: "center" as const, background: "rgba(251,113,133,0.2)", border: "1px solid rgba(251,113,133,0.3)", color: "#fb7185", fontSize: 12 }}
+                  onClick={confirmSwitch}>
+                  <Trash2 size={13} /> Scarta e inizia
+                </button>
+                <button style={{ ...S.btn, background: "rgba(255,255,255,0.07)", fontSize: 12 }}
+                  onClick={() => setPendingIdx(null)}>
+                  <X size={13} /> Annulla
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
       <div style={S.wrap}>
         {renderView()}
       </div>
@@ -1322,7 +1492,7 @@ const S: Record<string, React.CSSProperties> = {
   b2: { position: "fixed", bottom: "-60px", right: "-60px", width: 360, height: 360, borderRadius: "50%", background: "radial-gradient(circle,rgba(251,113,133,0.06) 0%,transparent 65%)", pointerEvents: "none", zIndex: 0 },
   b3: { position: "fixed", top: "45%", left: "50%", transform: "translate(-50%,-50%)", width: 500, height: 180, borderRadius: "50%", background: "radial-gradient(ellipse,rgba(52,211,153,0.04) 0%,transparent 70%)", pointerEvents: "none", zIndex: 0 },
   wrap: { position: "relative", zIndex: 1, maxWidth: 720, margin: "0 auto", padding: "24px 16px 100px" },
-  title: { fontSize: "clamp(22px,5vw,32px)", fontWeight: 900, margin: 0, letterSpacing: "-0.03em", background: "linear-gradient(135deg,#818cf8 0%,#f472b6 50%,#34d399 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" },
+  title: { fontSize: "clamp(18px,4.5vw,26px)", fontWeight: 900, margin: 0, letterSpacing: "0.18em", textTransform: "uppercase" as const, color: "#ffffff", fontFamily: "'Inter',system-ui,sans-serif" },
   tabs: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(145px,1fr))", gap: 8 },
   tab: { display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "20px 10px", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 18, cursor: "pointer", transition: "all 0.2s", backdropFilter: "blur(20px)", background: "rgba(255,255,255,0.02)" },
   watch: { display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12, background: "rgba(255,255,255,0.03)", backdropFilter: "blur(24px)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 18, padding: "18px 20px" },
