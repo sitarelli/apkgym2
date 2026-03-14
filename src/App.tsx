@@ -713,7 +713,7 @@ function WorkoutSession({ session, activeState, onUpdateState, onFinish }: {
         exercises.push({
           name: ex.name, setsCompleted: completedSets[gIdx][eIdx],
           setsTotal: ex.sets, reps: ex.reps,
-          notes: notes[gIdx][eIdx].filter(Boolean)
+          notes: notes[gIdx][eIdx]  // keep all (including empty) to preserve set-index for next session
         });
       });
     });
@@ -761,6 +761,20 @@ function WorkoutSession({ session, activeState, onUpdateState, onFinish }: {
           )}
         </div>
       </div>
+
+      {/* Previous-notes banner */}
+      {notes.some(g => g.some(e => e.some(n => n))) && isNotStarted && (
+        <div style={{
+          display: "flex", alignItems: "center", gap: 8,
+          background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.18)",
+          borderRadius: 12, padding: "8px 12px",
+        }}>
+          <PenLine size={13} color="#fbbf24" />
+          <span style={{ fontSize: 11, color: "rgba(251,191,36,0.8)", lineHeight: 1.4 }}>
+            Note dalla sessione precedente caricate come riferimento
+          </span>
+        </div>
+      )}
 
       {(session.groups ?? []).map((g, gIdx) => (
         <Group key={g.name} group={g} color={session.color}
@@ -1147,11 +1161,11 @@ function Dashboard({ onBack, history }: { onBack: () => void; history: WorkoutRe
                   <span style={{ display: "flex", alignItems: "center", gap: 4 }}><Clock size={11} /> {fmt(w.duration)}</span>
                   {w.completedSets > 0 && <span style={{ display: "flex", alignItems: "center", gap: 4 }}><Dumbbell size={11} /> {w.completedSets} serie</span>}
                 </div>
-                {w.exercises?.some(e => e.notes && e.notes.length > 0) && (
+                {w.exercises?.some(e => e.notes && e.notes.some(n => n)) && (
                   <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid rgba(255,255,255,0.05)" }}>
-                    {w.exercises.filter(e => e.notes && e.notes.length > 0).map(e => (
+                    {w.exercises.filter(e => e.notes && e.notes.some(n => n)).map(e => (
                       <p key={e.name} style={{ margin: "2px 0", fontSize: 10, color: "rgba(255,255,255,0.4)" }}>
-                        <span style={{ color: "rgba(255,255,255,0.55)", fontWeight: 600 }}>{e.name}:</span> {e.notes!.join(" · ")}
+                        <span style={{ color: "rgba(255,255,255,0.55)", fontWeight: 600 }}>{e.name}:</span> {e.notes!.filter(Boolean).join(" · ")}
                       </p>
                     ))}
                   </div>
@@ -1238,10 +1252,39 @@ export default function App() {
 
   const navigateToSession = (idx: number) => {
     const session = sessions[idx];
+
+    // ── Pre-fill notes from the last workout of the same session ──
+    const prevWorkout = [...getHistory()]
+      .reverse()
+      .find(w => w.sessionId === session.id);
+
+    const emptyNotes = (session.groups ?? []).map(g =>
+      g.exercises.map(ex => Array(ex.sets).fill(""))
+    );
+
+    let prefillNotes = emptyNotes;
+    if (prevWorkout?.exercises) {
+      let flatIdx = 0;
+      prefillNotes = (session.groups ?? []).map((g, gIdx) =>
+        g.exercises.map((ex, eIdx) => {
+          const prev = prevWorkout.exercises[flatIdx];
+          flatIdx++;
+          if (prev && prev.name === ex.name && prev.notes && prev.notes.length > 0) {
+            // Map previous notes by set index, pad/trim to current set count
+            const mapped = Array.from({ length: ex.sets }, (_, i) =>
+              (prev.notes && prev.notes[i]) ? prev.notes[i] : ""
+            );
+            return mapped;
+          }
+          return emptyNotes[gIdx][eIdx];
+        })
+      );
+    }
+
     setActiveSess({
       sessionIdx: idx,
       completedSets: (session.groups ?? []).map(g => g.exercises.map(() => 0)),
-      notes: (session.groups ?? []).map(g => g.exercises.map(ex => Array(ex.sets).fill(""))),
+      notes: prefillNotes,
       startMs: Date.now(),
       totalPausedMs: 0,
       paused: true,   // ← starts PAUSED; user must press Play to begin
