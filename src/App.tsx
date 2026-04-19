@@ -191,6 +191,37 @@ function ConfettiCanvas({ active, onDone }: { active: boolean; onDone: () => voi
 
 const sessions: Session[] = [
   {
+    id: 5, label: "Push", subtitle: "Petto · Spalle · Tricipiti", color: "#f97316", glow: "rgba(249,115,22,0.35)", icon: "🔱", type: "workout",
+    groups: [
+      {
+        name: "Petto, Spalle e Tricipiti", icon: "🏋️", exercises: [
+          { name: "Tirate al mento", sets: 4, reps: "12", rest: 90, description: "Sollevamento del bilanciere o manubri verso il mento. Lavora trapezio e deltoidi laterali." },
+          { name: "Pulley Basso", sets: 4, reps: "10", rest: 90, description: "Rematore al cavo basso seduto. Fondamentale per lo spessore della schiena (gran dorsale e romboidi)." },
+          { name: "Lat Machine", sets: 4, reps: "12", rest: 90, description: "Trazioni alla sbarra assistita o alla macchina. Focus sulla larghezza del dorso." },
+          { name: "Lat Avanti Pr. Inv.", sets: 2, reps: "8", rest: 90, description: "Lat machine con impugnatura inversa (palmi verso di te). Coinvolge molto di più i bicipiti e il basso dorsale." },
+          { name: "Curl Manubri", sets: 4, reps: "12", rest: 90, description: "Curl classico con manubri per i bicipiti, eseguito solitamente in piedi o seduti." },
+          { name: "Curl Bilanciere", sets: 4, reps: "10", rest: 90, description: "Curl con bilanciere (dritto o EZ). L'esercizio principe per la massa dei bicipiti." },
+        ]
+      }
+    ]
+  },
+  {
+    id: 6, label: "Pull", subtitle: "Dorso · Bicipiti", color: "#06b6d4", glow: "rgba(6,182,212,0.35)", icon: "🛡️", type: "workout",
+    groups: [
+      {
+        name: "Dorso e Bicipiti", icon: "🏋️", exercises: [
+          { name: "Bench 30°", sets: 4, reps: "10", rest: 120, description: "Distensioni con bilanciere o manubri su panca inclinata a 30°. Focalizzato sulla parte superiore del petto." },
+          { name: "Cavi dall'alto", sets: 2, reps: "18", rest: 90, description: "Croci ai cavi alti. Si portano i cavi verso il basso per isolare la parte inferiore e centrale del pettorale." },
+          { name: "Bench Press", sets: 4, reps: "10", rest: 120, description: "Panca piana classica (bilanciere o manubri). L'esercizio base per la forza e la massa del petto." },
+          { name: "Shoulder Press", sets: 3, reps: "8", rest: 90, description: "(In superserie) Spinte sopra la testa per le spalle. Sviluppa i deltoidi anteriori e laterali." },
+          { name: "Alzate Lat.", sets: 3, reps: "12", rest: 90, description: "(In superserie) Alzate laterali con manubri per isolare il deltoide laterale e dare larghezza alle spalle." },
+          { name: "Tricipiti ai Cavi", sets: 4, reps: "10", rest: 90, description: "Pushdown ai cavi per i tricipiti. Estensione delle braccia verso il basso per isolare il muscolo posteriore del braccio." },
+          { name: "Dips", sets: 2, reps: "max", rest: 90, description: "Parallele o dips alla panca. Ottimo per tricipiti e parte bassa del petto. Vai a cedimento." },
+        ]
+      }
+    ]
+  },
+  {
     id: 1, label: "Sessione 1", subtitle: "Core · Petto · Tricipiti", color: "#818cf8", glow: "rgba(129,140,248,0.35)", icon: "💪", type: "workout",
     groups: [
       {
