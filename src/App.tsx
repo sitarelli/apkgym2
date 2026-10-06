@@ -5,7 +5,7 @@ import {
   BarChart3, ArrowLeft, Trash2, Download, Upload,
   Database, Zap, Trophy, Clock, TrendingUp, Calendar,
   Home, Activity, PenLine,
-  ChevronRight, Save
+  ChevronRight, Save, Lightbulb
 } from "lucide-react";
 import { XAxis, YAxis, Tooltip, ResponsiveContainer, Area, AreaChart } from "recharts";
 
@@ -119,6 +119,106 @@ function getHistory(): WorkoutRecord[] {
 
 function saveHistory(data: WorkoutRecord[]): void {
   localStorage.setItem(HISTORY_KEY, JSON.stringify(data));
+  autoBackup(data);
+}
+
+// ── Backup ──
+const BACKUP_SHARE_KEY = "lastBackupShare";   // ultima volta che hai condiviso/esportato il backup
+const BACKUP_AUTO_KEY = "lastAutoBackup";     // ultima copia automatica sul telefono
+const BACKUP_SNOOZE_KEY = "backupSnooze";     // "Più tardi" sul promemoria
+const BACKUP_DAYS = 14;
+const isNativeApp = (): boolean => !!(window as any).Capacitor?.isNativePlatform?.();
+
+// Copia automatica sul telefono dopo ogni salvataggio. Mai bloccante: se fallisce, l'app va avanti.
+async function autoBackup(data: WorkoutRecord[]): Promise<void> {
+  if (!isNativeApp()) return;
+  try {
+    const { Filesystem, Directory } = await import('@capacitor/filesystem');
+    const json = JSON.stringify({ exportDate: new Date().toISOString(), workouts: data }, null, 2);
+    const path = "WorkoutTracker/backup_latest.json";
+    try {
+      await Filesystem.writeFile({ path, data: json, directory: Directory.Documents, encoding: 'utf8' as any, recursive: true });
+    } catch {
+      await Filesystem.writeFile({ path, data: json, directory: Directory.Data, encoding: 'utf8' as any, recursive: true });
+    }
+    localStorage.setItem(BACKUP_AUTO_KEY, String(Date.now()));
+  } catch (e) { console.warn("Auto backup non riuscito:", e); }
+}
+
+// Esporta il JSON e lo condivide (Drive, WhatsApp, ecc.)
+async function exportBackup(history: WorkoutRecord[]): Promise<void> {
+  const data = JSON.stringify({ exportDate: new Date().toISOString(), workouts: history }, null, 2);
+  const dateStr = new Date().toISOString().slice(0, 10);
+  const fileName = `workout_backup_${dateStr}.json`;
+  if (isNativeApp()) {
+    try {
+      const { Filesystem, Directory } = await import('@capacitor/filesystem');
+      const { Share } = await import('@capacitor/share');
+      await Filesystem.writeFile({ path: fileName, data, directory: Directory.Cache, encoding: 'utf8' as any });
+      const uriResult = await Filesystem.getUri({ path: fileName, directory: Directory.Cache });
+      await Share.share({ title: 'Backup Allenamenti', text: `Backup del ${dateStr}`, url: uriResult.uri, dialogTitle: 'Salva o condividi il backup' });
+      localStorage.setItem(BACKUP_SHARE_KEY, String(Date.now()));
+    } catch (err) { console.error('Export error:', err); alert('Errore durante il salvataggio.'); }
+  } else {
+    const blob = new Blob([data], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = fileName; a.click();
+    URL.revokeObjectURL(url);
+    localStorage.setItem(BACKUP_SHARE_KEY, String(Date.now()));
+  }
+}
+
+function backupDue(history: WorkoutRecord[]): boolean {
+  if (history.length === 0) return false;
+  const now = Date.now();
+  if (Number(localStorage.getItem(BACKUP_SNOOZE_KEY) || 0) > now) return false;
+  const last = Number(localStorage.getItem(BACKUP_SHARE_KEY)) || Date.parse(history[0].date);
+  return now - last > BACKUP_DAYS * 864e5;
+}
+
+const fmtDateTime = (ts: number): string => {
+  const d = new Date(ts);
+  return `${String(d.getDate()).padStart(2, "0")}-${String(d.getMonth() + 1).padStart(2, "0")}-${d.getFullYear()}`;
+};
+
+// ── Sessione in corso: salvataggio automatico ──
+const ACTIVE_KEY = "activeSession";
+
+function persistActiveSession(state: ActiveSessionState | null): void {
+  try {
+    if (!state) { localStorage.removeItem(ACTIVE_KEY); return; }
+    localStorage.setItem(ACTIVE_KEY, JSON.stringify({
+      sessionId: sessions[state.sessionIdx]?.id, savedAt: Date.now(), state,
+    }));
+  } catch { /* storage non disponibile */ }
+}
+
+function loadActiveSession(): ActiveSessionState | null {
+  try {
+    const raw = localStorage.getItem(ACTIVE_KEY);
+    if (!raw) return null;
+    const { sessionId, savedAt, state } = JSON.parse(raw) as { sessionId: number; savedAt: number; state: ActiveSessionState };
+    const idx = sessions.findIndex(s => s.id === sessionId);
+    if (idx < 0 || !state) return null;
+    const groups = sessions[idx].groups ?? [];
+    const shapeOk = state.completedSets?.length === groups.length &&
+      groups.every((g, i) => state.completedSets[i]?.length === g.exercises.length && state.notes?.[i]?.length === g.exercises.length);
+    if (!shapeOk) return null;
+    // App chiusa mentre il cronometro girava: lo metto in pausa all'ultima azione, non conto le ore di chiusura
+    if (!state.paused) return { ...state, sessionIdx: idx, paused: true, pausedAtMs: savedAt };
+    return { ...state, sessionIdx: idx };
+  } catch { return null; }
+}
+
+// Ultima data in cui è stata eseguita una sessione (dd-mm-yyyy)
+function lastDoneLabel(history: WorkoutRecord[], sessionId: number): string | null {
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i].sessionId === sessionId) {
+      const d = new Date(history[i].date);
+      return `${String(d.getDate()).padStart(2, "0")}-${String(d.getMonth() + 1).padStart(2, "0")}-${d.getFullYear()}`;
+    }
+  }
+  return null;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -196,7 +296,7 @@ const sessions: Session[] = [
       {
         name: "Petto, Spalle e Tricipiti", icon: "🏋️", exercises: [
           { name: "Tirate al mento", sets: 4, reps: "12", rest: 90, description: "Sollevamento del bilanciere o manubri verso il mento. Lavora trapezio e deltoidi laterali." },
-          { name: "Pulley Basso", sets: 4, reps: "10", rest: 90, description: "Rematore al cavo basso seduto. Fondamentale per lo spessore della schiena (gran dorsale e romboidi)." },
+          { name: "Row Vertical", sets: 4, reps: "10", rest: 90, description: "Rematore alla macchina verticale con petto appoggiato al cuscino. Tira le maniglie verso i fianchi, scapole che si avvicinano. Il petto appoggiato scarica la zona lombare: ottimo per lo spessore del dorso (gran dorsale e romboidi)." },
           { name: "Lat Machine", sets: 4, reps: "12", rest: 90, description: "Trazioni alla sbarra assistita o alla macchina. Focus sulla larghezza del dorso." },
           { name: "Lat Avanti Pr. Inv.", sets: 2, reps: "8", rest: 90, description: "Lat machine con impugnatura inversa (palmi verso di te). Coinvolge molto di più i bicipiti e il basso dorsale." },
           { name: "Curl Manubri", sets: 4, reps: "12", rest: 90, description: "Curl classico con manubri per i bicipiti, eseguito solitamente in piedi o seduti." },
@@ -297,6 +397,23 @@ const sessions: Session[] = [
     ]
   },
   {
+    id: 7, label: "Gambe", subtitle: "Quadricipiti · Glutei · Cardio", color: "#a3e635", glow: "rgba(163,230,53,0.35)", icon: "🦵", type: "workout",
+    groups: [
+      {
+        name: "Gambe", icon: "🦵", exercises: [
+          { name: "Hack Squat", sets: 3, reps: "15", rest: 120, description: "Macchina inclinata, schiena appoggiata, piedi a larghezza spalle. Scendi controllato fino a ~90° e spingi senza bloccare le ginocchia. Ottimo per quadricipiti e glutei con la schiena protetta." },
+          { name: "Affondi in camminata", sets: 3, reps: "10+10", rest: 90, description: "Manubri ai lati, passo lungo. Ginocchio posteriore verso terra, busto eretto. 10 per gamba." },
+          { name: "Leg Press Orizz. (pedana alta)", sets: 4, reps: "20-20-16-16", rest: 120, description: "Leg press orizzontale con piedi alti sulla pedana: più lavoro su glutei e femorali. Scendi fino a ~90°, spingi senza bloccare le ginocchia. Le ultime due serie (16-16) si eseguono a una gamba sola." },
+        ]
+      },
+      {
+        name: "Cardio", icon: "🚴", exercises: [
+          { name: "Cyclette", sets: 1, reps: "10 min", rest: 0, isTime: true, duration: 600, description: "10 min intensità moderata, RPM 70-90. Recupero attivo." },
+        ]
+      },
+    ]
+  },
+  {
     id: 4, label: "Attività Extra", subtitle: "Gravel · Passeggiata", color: "#fbbf24", glow: "rgba(251,191,36,0.35)", icon: "🚴", type: "extra",
     activities: [
       { name: "Gravel Bike", icon: "🚵", description: "Sessione ciclismo su gravel. Avvia il timer." },
@@ -304,6 +421,77 @@ const sessions: Session[] = [
     ]
   },
 ];
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TIPS — consigli personalizzati (over 50): serie/ripetute e come scegliere il carico
+// ═══════════════════════════════════════════════════════════════════════════
+
+interface Tip { range: string; load: string; care: string; }
+
+const TIP_POWER = (care: string): Tip => ({
+  range: "3-4 × 8-10 (carico medio-alto)",
+  load: "Scegli un peso con cui le ultime 2 ripetute sono dure ma pulite (1-2 in riserva). Se chiudi tutte le serie a 10 con facilità, sali di 2-5% la volta dopo.",
+  care,
+});
+const TIP_VOLUME = (care: string): Tip => ({
+  range: "3-4 × 10-12 (carico moderato)",
+  load: "Peso con cui arrivi a 12 con tecnica perfetta e 2 ripetute di margine. Dopo i 50 anni 12×4 con carico moderato rende quasi quanto 8×4 pesante, con molto meno stress su articolazioni e tendini.",
+  care,
+});
+const TIP_ISO = (care: string): Tip => ({
+  range: "3 × 12-15 (carico leggero-moderato)",
+  load: "Esercizio di isolamento: qui conta il controllo, non il peso. Fai 2 sec in salita e 2-3 in discesa; fermati 1-2 ripetute prima del cedimento.",
+  care,
+});
+
+const TIPS: Record<string, Tip> = {
+  "Tirate al mento": TIP_ISO("Spalle delicate dopo i 50: sali solo fino all'altezza dello sterno, presa larga quanto le spalle, gomiti non oltre le mani. Se senti pizzicare la spalla, passa alle alzate laterali."),
+  "Row Vertical": TIP_VOLUME("Petto ben appoggiato, non dondolare. Tira con i gomiti, non con le mani, e fermati 1 sec a scapole unite."),
+  "Lat Machine": TIP_VOLUME("Tira alla parte alta del petto, mai dietro la nuca. Niente slanci con il busto."),
+  "Lat Avanti Pr. Inv.": TIP_POWER("Presa inversa carica il gomito e il bicipite: scalda bene e non andare a cedimento. Se il gomito protesta, usa presa neutra."),
+  "Curl Manubri": TIP_VOLUME("Gomiti fermi ai fianchi, niente dondolio. Meglio 10-12 pulite che 8 barate."),
+  "Curl Bilanciere": TIP_POWER("Preferisci la barra EZ: polsi e gomiti soffrono meno. Schiena dritta, niente spinta con le anche."),
+  "Bench 30°": TIP_POWER("Scapole retratte e gomiti a ~45° dal busto per proteggere le spalle. Se fai da solo usa sempre i fermi di sicurezza."),
+  "Cavi dall'alto": TIP_ISO("Gomiti leggermente flessi e fissi. Peso leggero: sono croci, non spinte."),
+  "Bench Press": TIP_POWER("Esercizio più pesante della giornata: fai 2 serie di riscaldamento progressive. Non superare le 4 serie pesanti; sotto le 6 ripetute il rischio spalle/pettorale supera il beneficio."),
+  "Shoulder Press": TIP_VOLUME("Con i manubri e schienale a 80-90°. Non bloccare i gomiti in alto e non inarcare la schiena. Spalla che scrocchia o duole: riduci il carico e l'ampiezza."),
+  "Alzate Lat.": TIP_ISO("Peso davvero leggero, gomiti leggermente flessi, sali fino all'altezza delle spalle e non oltre."),
+  "Tricipiti ai Cavi": TIP_ISO("Gomiti incollati ai fianchi. Se senti fastidio al gomito, passa alla corda al posto della barra."),
+  "Dips": {
+    range: "2 × 6-10 (non a cedimento)",
+    load: "Meglio assistite o controcarico finché fai almeno 8 ripetute pulite. Scendi solo fino a gomiti a 90°.",
+    care: "È l'esercizio più rischioso per le spalle dopo i 50 anni: se senti fastidio sostituiscilo con push-down o French press.",
+  },
+  "Leg Raiser": TIP_ISO("Lombare sempre a contatto. Se si stacca, piega le ginocchia."),
+  "Crunches": TIP_ISO("Movimento corto, espira in salita, non tirare il collo con le mani."),
+  "Plank": {
+    range: "3 × 30-45 sec",
+    load: "Sali di 5 sec a settimana solo se il bacino resta in linea. Qualità prima della durata.",
+    care: "Se la lombare cede o le spalle bruciano, interrompi e riparti: è meglio più serie brevi che una lunga scorretta.",
+  },
+  "Pull Over Bilanciere": TIP_ISO("Carico leggero e discesa lenta: stira dorsale e petto ma stressa la spalla. Ferma la discesa quando senti tensione, non dolore."),
+  "French Press Manubri": TIP_VOLUME("Gomiti verso il soffitto e fermi. Se il gomito duole passa a manubri neutri o ai cavi."),
+  "Rotary Calf": TIP_VOLUME("Polpacci rispondono bene a tempi lenti: 1 sec in pausa in alto, 2 sec in discesa, ampiezza completa."),
+  "Leg Press": TIP_POWER("Non portare le ginocchia oltre ~90° e non staccare il bacino dallo schienale. Schema piramidale: aumenta il peso quando scendono le ripetute."),
+  "Affondi in camminata": TIP_VOLUME("Passi lunghi, busto eretto, ginocchio in linea con la punta del piede. Se le ginocchia protestano, fai affondi statici o riduci l'ampiezza."),
+  "Croci a 90°": TIP_ISO("Peso leggero: è il deltoide posteriore, ottimo per la postura e la salute delle spalle. Mai slanci."),
+  "Cyclette": {
+    range: "10 min a ritmo moderato",
+    load: "Dovresti riuscire a parlare a frasi brevi. Frequenza ~110-130 bpm; puoi arrivare a 15 min con il tempo.",
+    care: "Regola la sella: ginocchio quasi esteso (leggera flessione) a pedale basso.",
+  },
+  "Hyperextension": TIP_ISO("Sali fino alla linea retta del corpo, senza iperestendere. Lombare delicata: movimento lento e controllato."),
+  "Row Presa Stretta": TIP_POWER("Busto fermo, tira all'ombelico e stringi le scapole. Se la schiena si arrotonda, riduci il peso."),
+  "Row Presa Larga": TIP_ISO("Volume alto con carico leggero: 18 ripetute pulite e scapole ben controllate."),
+  "Lat Avanti": TIP_VOLUME("Schema piramidale: aumenta il peso quando scendono le ripetute, ma mantieni sempre scapole abbassate."),
+  "Curl Cavo Basso": TIP_VOLUME("Tensione costante per tutto il movimento: pausa 1 sec in alto, discesa lenta."),
+  "Hack Squat": TIP_VOLUME("15 ripetute: carico moderato che ti lasci 2 ripetute di margine. Ginocchia in linea con i piedi, schiena sempre appoggiata. È la macchina più \"amica\" di schiena e ginocchia."),
+  "Leg Press Orizz. (pedana alta)": {
+    range: "4 serie: 20-20-16-16 (le ultime 2 a una gamba)",
+    load: "Per le serie a una gamba usa circa il 40-50% del carico a due gambe e controlla la discesa. Ripetute alte: peso leggero-moderato, non arrivare al cedimento.",
+    care: "Ginocchia senza blocchi in alto, bacino fermo sullo schienale. Lavorare a una gamba corregge gli squilibri tra destra e sinistra.",
+  },
+};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // HOOKS
@@ -605,13 +793,60 @@ function SetNoteInput({ value, onChange }: { value: string; onChange: (v: string
 // EXERCISE CARD
 // ═══════════════════════════════════════════════════════════════════════════
 
+// Calcolatore carico/ripetute: dal peso che hai usato per N ripetute stima il massimale (Epley)
+// e propone il peso per altri target di ripetute, lasciando 2 ripetute di margine.
+function LoadCalc({ notes }: { notes: string[] }) {
+  const lastKg = (() => {
+    const v = (notes ?? []).map(n => { const m = n?.match(/(\d+(?:[.,]\d+)?)/); return m ? parseFloat(m[1].replace(",", ".")) : NaN; }).filter(x => !isNaN(x));
+    return v.length ? String(Math.max(...v)) : "";
+  })();
+  const [kg, setKg] = useState(lastKg);
+  const [reps, setReps] = useState("10");
+  const w = parseFloat(kg.replace(",", ".")), r = parseInt(reps);
+  const valid = w > 0 && r >= 1 && r <= 15;
+  const oneRm = valid ? w * (1 + r / 30) : 0;
+  const forReps = (t: number) => Math.round((oneRm / (1 + (t + 2) / 30)) * 2) / 2;
+  const inp: React.CSSProperties = { width: 56, padding: "5px 6px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.15)", background: "rgba(255,255,255,0.06)", color: "#fff", fontSize: 13, fontFamily: "'JetBrains Mono',monospace", textAlign: "center" };
+  return (
+    <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid rgba(251,191,36,0.15)" }}>
+      <p style={{ ...S.descTxt, color: "#fbbf24", fontWeight: 700, marginBottom: 6 }}>⚖️ Quanto caricare?</p>
+      <p style={{ ...S.descTxt, marginBottom: 8 }}>Inserisci un peso con cui hai fatto circa quelle ripetute (quasi al limite):</p>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
+        <input value={kg} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setKg(e.target.value)} inputMode="decimal" placeholder="kg" style={inp} />
+        <span style={{ fontSize: 12, color: "rgba(255,255,255,0.5)" }}>kg ×</span>
+        <input value={reps} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setReps(e.target.value)} inputMode="numeric" placeholder="rip" style={inp} />
+        <span style={{ fontSize: 12, color: "rgba(255,255,255,0.5)" }}>rip</span>
+      </div>
+      {valid ? (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 6 }}>
+            {[6, 8, 10, 12, 15].map(t => (
+              <div key={t} style={{ textAlign: "center", background: "rgba(255,255,255,0.04)", borderRadius: 8, padding: "6px 2px" }}>
+                <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)" }}>{t} rip</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#fff", fontFamily: "'JetBrains Mono',monospace" }}>{forReps(t)}</div>
+              </div>
+            ))}
+          </div>
+          <p style={{ ...S.descTxt, fontSize: 10, marginTop: 8 }}>
+            Pesi in kg con 2 ripetute di margine. Se le ultime ripetute vengono facili, sali di 1-2 kg; se la tecnica cede, scendi. È una stima: sulle macchine e con il riscaldamento può variare del 5-10%.
+          </p>
+        </>
+      ) : (
+        <p style={{ ...S.descTxt, fontSize: 10 }}>Inserisci kg e ripetute (da 1 a 15) per vedere i pesi consigliati.</p>
+      )}
+    </div>
+  );
+}
+
 function ExCard({ ex, color, done, onSet, notes, onNote }: {
   ex: Exercise; color: string; done: number;
   onSet: (i: number) => void; notes: string[];
   onNote: (setIdx: number, val: string) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [showTip, setShowTip] = useState(false);
   const [showRest, setShowRest] = useState(false);
+  const tip = TIPS[ex.name];
   return (
     <>
       {showRest && <RestTimerModal seconds={ex.rest || 90} onClose={() => setShowRest(false)} />}
@@ -621,6 +856,12 @@ function ExCard({ ex, color, done, onSet, notes, onNote }: {
             <p style={S.exName}>{ex.name}</p>
             <p style={S.exMeta}>{ex.sets}×{ex.reps}{ex.rest > 0 ? ` · ${ex.rest}s rec` : ""}</p>
           </div>
+          {tip && (
+            <button style={{ ...S.infoBtn, borderColor: showTip ? "#fbbf24" : "rgba(251,191,36,0.35)", color: "#fbbf24", background: showTip ? "rgba(251,191,36,0.15)" : undefined }}
+              title="Consigli per te" onClick={() => setShowTip(!showTip)}>
+              <Lightbulb size={14} />
+            </button>
+          )}
           <button style={{ ...S.infoBtn, borderColor: `${color}30`, color }} onClick={() => setOpen(!open)}>
             {open ? <ChevronUp size={14} /> : <Info size={14} />}
           </button>
@@ -628,6 +869,14 @@ function ExCard({ ex, color, done, onSet, notes, onNote }: {
         {open && (
           <div style={{ ...S.desc, borderColor: `${color}20` }}>
             <p style={S.descTxt}>{ex.description}</p>
+          </div>
+        )}
+        {showTip && tip && (
+          <div style={{ ...S.desc, borderColor: "rgba(251,191,36,0.25)", background: "rgba(251,191,36,0.05)" }}>
+            <p style={{ ...S.descTxt, color: "#fbbf24", fontWeight: 700, marginBottom: 6 }}>💡 Consiglio (over 50): {tip.range}</p>
+            <p style={{ ...S.descTxt, marginBottom: 6 }}><strong style={{ color: "rgba(255,255,255,0.8)" }}>Carico:</strong> {tip.load}</p>
+            <p style={S.descTxt}><strong style={{ color: "rgba(255,255,255,0.8)" }}>Attenzione:</strong> {tip.care}</p>
+            {!ex.isTime && <LoadCalc notes={notes} />}
           </div>
         )}
         {ex.isTime && ex.duration && <ExTimer duration={ex.duration} />}
@@ -692,6 +941,7 @@ function WorkoutSession({ session, activeState, onUpdateState, onFinish }: {
   onFinish: () => void;
 }) {
   const { completedSets, notes, startMs, totalPausedMs, paused, pausedAtMs } = activeState;
+  const [showSavePrompt, setShowSavePrompt] = useState(false);
 
   // Wall-clock elapsed — ticks every second even if component remounted
   const [elapsed, setElapsed] = useState<number>(() => {
@@ -725,6 +975,13 @@ function WorkoutSession({ session, activeState, onUpdateState, onFinish }: {
     const next = completedSets.map(g => [...g]);
     next[gIdx][eIdx] = next[gIdx][eIdx] >= sIdx + 1 ? sIdx : sIdx + 1;
     onUpdateState({ ...activeState, completedSets: next });
+    // Ultimo esercizio della sessione completato (anche se altri sono stati saltati) → chiedi di salvare
+    const groups = session.groups ?? [];
+    const lastG = groups.length - 1;
+    const lastE = lastG >= 0 ? groups[lastG].exercises.length - 1 : -1;
+    if (gIdx === lastG && eIdx === lastE && next[gIdx][eIdx] === groups[lastG].exercises[lastE].sets) {
+      setShowSavePrompt(true);
+    }
   };
 
   const handleNote = (gIdx: number, eIdx: number, sIdx: number, val: string) => {
@@ -764,6 +1021,27 @@ function WorkoutSession({ session, activeState, onUpdateState, onFinish }: {
 
   return (
     <div style={{ display: "flex", flexDirection: "column" as const, gap: 16 }}>
+      {showSavePrompt && (
+        <div style={S.overlay}>
+          <div style={{ ...S.modalCard, minWidth: 290 }}>
+            <p style={{ margin: "0 0 8px", fontSize: 32 }}>🎉</p>
+            <p style={{ margin: "0 0 6px", fontSize: 18, fontWeight: 800, color: session.color }}>Sessione completata!</p>
+            <p style={{ margin: "0 0 20px", fontSize: 13, color: "rgba(255,255,255,0.5)", lineHeight: 1.6 }}>
+              {doneSets}/{totalSets} serie · {fmt(elapsed)}<br />Vuoi salvare l'allenamento?
+            </p>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button style={{ ...S.btn, flex: 1, justifyContent: "center" as const, background: session.color, fontSize: 14, fontWeight: 800, padding: "12px 16px" }}
+                onClick={() => { setShowSavePrompt(false); handleFinish(); }}>
+                <CheckCircle2 size={16} /> Sì, salva
+              </button>
+              <button style={{ ...S.btn, flex: 1, justifyContent: "center" as const, background: "rgba(255,255,255,0.08)", fontSize: 14, padding: "12px 16px" }}
+                onClick={() => setShowSavePrompt(false)}>
+                No
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <div style={{ ...S.watch, borderColor: `${session.color}30`, boxShadow: `0 0 40px ${session.glow}` }}>
         <div>
           <p style={S.wLabel}>Durata</p>
@@ -985,26 +1263,30 @@ function Dashboard({ onBack, history }: { onBack: () => void; history: WorkoutRe
   filtered.forEach(w => w.exercises?.forEach(ex => { exFreq[ex.name] = (exFreq[ex.name] || 0) + ex.setsCompleted; }));
   const topEx = Object.entries(exFreq).sort((a, b) => b[1] - a[1]).slice(0, 5);
 
-  const handleExport = async () => {
-    const data = JSON.stringify({ exportDate: new Date().toISOString(), workouts: history }, null, 2);
-    const dateStr = new Date().toISOString().slice(0, 10);
-    const fileName = `workout_backup_${dateStr}.json`;
-    const isNative = !!(window as any).Capacitor?.isNativePlatform?.();
-    if (isNative) {
-      try {
-        const { Filesystem, Directory } = await import('@capacitor/filesystem');
-        const { Share } = await import('@capacitor/share');
-        await Filesystem.writeFile({ path: fileName, data, directory: Directory.Cache, encoding: 'utf8' as any });
-        const uriResult = await Filesystem.getUri({ path: fileName, directory: Directory.Cache });
-        await Share.share({ title: 'Backup Allenamenti', text: `Backup del ${dateStr}`, url: uriResult.uri, dialogTitle: 'Salva o condividi il backup' });
-      } catch (err) { console.error('Export error:', err); alert('Errore durante il salvataggio.'); }
-    } else {
-      const blob = new Blob([data], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a'); a.href = url; a.download = fileName; a.click();
-      URL.revokeObjectURL(url);
-    }
+  // Carico massimo per esercizio, ricavato dal primo numero scritto nelle note delle serie
+  const maxKg = (notes?: string[]): number | null => {
+    const vals = (notes ?? []).map(n => { const m = n?.match(/(\d+(?:[.,]\d+)?)/); return m ? parseFloat(m[1].replace(",", ".")) : NaN; })
+      .filter(v => !isNaN(v));
+    return vals.length ? Math.max(...vals) : null;
   };
+  const loadByEx: Record<string, { name: string; kg: number }[]> = {};
+  filtered.forEach(w => {
+    const d = new Date(w.date);
+    const label = `${d.getDate()}/${d.getMonth() + 1}`;
+    w.exercises?.forEach(ex => {
+      const kg = maxKg(ex.notes);
+      if (kg !== null) (loadByEx[ex.name] ||= []).push({ name: label, kg });
+    });
+  });
+  const loadExercises = Object.keys(loadByEx).sort((a, b) => loadByEx[b].length - loadByEx[a].length);
+  const [loadExSel, setLoadEx] = useState("");
+  const loadEx = loadExercises.includes(loadExSel) ? loadExSel : loadExercises[0] ?? "";
+  const loadData = loadByEx[loadEx] ?? [];
+
+  const [, setBackupTick] = useState(0);
+  const handleExport = async () => { await exportBackup(history); setBackupTick(t => t + 1); };
+  const lastShare = Number(localStorage.getItem(BACKUP_SHARE_KEY)) || 0;
+  const lastAuto = Number(localStorage.getItem(BACKUP_AUTO_KEY)) || 0;
 
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return;
@@ -1159,6 +1441,43 @@ function Dashboard({ onBack, history }: { onBack: () => void; history: WorkoutRe
         </div>
       )}
 
+      {/* Progressione carichi */}
+      {loadExercises.length > 0 && (
+        <div style={{ ...S.card, borderColor: "rgba(255,255,255,0.06)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+            <TrendingUp size={14} color="rgba(255,255,255,0.35)" />
+            <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.4)", textTransform: "uppercase" as const, letterSpacing: "0.08em" }}>Progressione carichi (kg)</span>
+          </div>
+          <select value={loadEx} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setLoadEx(e.target.value)}
+            style={{ width: "100%", padding: "8px 10px", marginBottom: 12, borderRadius: 10, border: "1px solid rgba(255,255,255,0.12)", background: "#14142a", color: "#fff", fontSize: 13 }}>
+            {loadExercises.map(n => <option key={n} value={n}>{n}</option>)}
+          </select>
+          {loadData.length > 1 ? (
+            <ResponsiveContainer width="100%" height={140}>
+              <AreaChart data={loadData}>
+                <defs>
+                  <linearGradient id="gradKg" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#34d399" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#34d399" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <XAxis dataKey="name" tick={{ fill: "rgba(255,255,255,0.25)", fontSize: 10 }} axisLine={false} tickLine={false} />
+                <YAxis hide domain={["dataMin - 5", "dataMax + 5"]} />
+                <Tooltip contentStyle={{ background: "#1a1a2e", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, fontSize: 12, color: "#fff" }} />
+                <Area type="monotone" dataKey="kg" stroke="#34d399" fill="url(#gradKg)" strokeWidth={2} dot={{ r: 3, fill: "#34d399" }} />
+              </AreaChart>
+            </ResponsiveContainer>
+          ) : (
+            <p style={{ margin: 0, fontSize: 11, color: "rgba(255,255,255,0.3)", textAlign: "center" as const }}>
+              {loadData.length === 1 ? `Ultimo carico: ${loadData[0].kg} kg · servono almeno 2 sessioni per il grafico` : "Nessun dato"}
+            </p>
+          )}
+          <p style={{ margin: "8px 0 0", fontSize: 10, color: "rgba(255,255,255,0.25)" }}>
+            Usa il carico massimo scritto nelle note delle serie (es. "40" o "40kg").
+          </p>
+        </div>
+      )}
+
       {/* History toggle */}
       <button style={{
         ...S.btn, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)",
@@ -1223,7 +1542,9 @@ function Dashboard({ onBack, history }: { onBack: () => void; history: WorkoutRe
         {showBackup && (
           <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid rgba(255,255,255,0.05)" }}>
             <p style={{ margin: "0 0 12px", fontSize: 11, color: "rgba(255,255,255,0.35)", lineHeight: 1.6 }}>
-              Esporta JSON di backup — salvalo su Google Drive per non perderlo.
+              Esporta JSON di backup — salvalo su Google Drive per non perderlo.<br />
+              Ultimo backup su Drive/condiviso: {lastShare ? fmtDateTime(lastShare) : "mai"}<br />
+              Ultima copia automatica sul telefono: {lastAuto ? fmtDateTime(lastAuto) : "nessuna"}
             </p>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" as const }}>
               <Btn bg="rgba(52,211,153,0.15)" style={{ border: "1px solid rgba(52,211,153,0.3)", color: "#34d399", padding: "9px 16px" }} onClick={handleExport}>
@@ -1250,8 +1571,12 @@ export default function App() {
   const [view, setView] = useState("home");
   const [history, setHistory] = useState<WorkoutRecord[]>([]);
   // Session state lives here — survives any view change
-  const [activeSess, setActiveSess] = useState<ActiveSessionState | null>(null);
+  // Ripristinata da localStorage: se chiudi l'app a metà allenamento non perdi nulla
+  const [activeSess, setActiveSess] = useState<ActiveSessionState | null>(loadActiveSession);
   const [showConfetti, setShowConfetti] = useState(false);
+  const [, setBackupTick] = useState(0);
+
+  useEffect(() => { persistActiveSession(activeSess); }, [activeSess]);
 
   useEffect(() => {
     const link = document.createElement("link");
@@ -1404,7 +1729,7 @@ export default function App() {
             </div>
           </div>
           <p style={{ color: "rgba(255,255,255,0.2)", fontSize: 11, margin: 0, letterSpacing: "0.12em" }}>
-            3 SESSIONI · ATTIVITÀ EXTRA
+            {sessions.filter(s => s.type === "workout").length} SESSIONI · ATTIVITÀ EXTRA
           </p>
         </div>
 
@@ -1452,6 +1777,26 @@ export default function App() {
           );
         })()}
 
+        {/* Promemoria backup */}
+        {backupDue(history) && (
+          <div style={{ ...S.card, marginBottom: 12, borderColor: "rgba(251,191,36,0.3)", background: "rgba(251,191,36,0.06)" }}>
+            <p style={{ margin: "0 0 4px", fontSize: 13, fontWeight: 700, color: "#fbbf24" }}>💾 Salva il backup su Drive</p>
+            <p style={{ margin: "0 0 10px", fontSize: 11, color: "rgba(255,255,255,0.45)", lineHeight: 1.5 }}>
+              Non salvi i tuoi dati da oltre {BACKUP_DAYS} giorni. Se reinstalli l'app senza backup perdi tutto lo storico.
+            </p>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button style={{ ...S.btn, background: "#fbbf24", color: "#1a1a1a", fontWeight: 700 }}
+                onClick={async () => { await exportBackup(history); setBackupTick(t => t + 1); }}>
+                <Upload size={13} /> Salva su Drive
+              </button>
+              <button style={{ ...S.btn, background: "rgba(255,255,255,0.07)" }}
+                onClick={() => { localStorage.setItem(BACKUP_SNOOZE_KEY, String(Date.now() + 3 * 864e5)); setBackupTick(t => t + 1); }}>
+                Più tardi
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Ripeti ultima sessione — solo se non c'è sessione in corso */}
         {!activeSess && lastWorkout && lastSession && (
           <div style={{
@@ -1486,6 +1831,10 @@ export default function App() {
               <span style={{ fontSize: 28, marginBottom: 4 }}>{s.icon}</span>
               <span style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>{s.label}</span>
               <span style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", textAlign: "center" as const, marginTop: 1 }}>{s.subtitle}</span>
+              {(() => {
+                const last = lastDoneLabel(history, s.id);
+                return last ? <span style={{ fontSize: 9, color: "rgba(255,255,255,0.28)", marginTop: 2 }}>({last})</span> : null;
+              })()}
             </button>
           ))}
         </div>
