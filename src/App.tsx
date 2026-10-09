@@ -289,7 +289,66 @@ function ConfettiCanvas({ active, onDone }: { active: boolean; onDone: () => voi
 // DATA
 // ═══════════════════════════════════════════════════════════════════════════
 
+// Addominali fissi di ogni giornata: 3 serie, ripetute moderate-alte, tempo controllato
+const ABS_GROUP: ExerciseGroup = {
+  name: "Addominali", icon: "🔥", exercises: [
+    { name: "Sollevamento Gambe su Panca Inclinata", sets: 3, reps: "12", rest: 60, description: "Sdraiato sulla panca inclinata con la testa in alto, mani che tengono la parte alta della panca. Solleva le gambe (leggermente flesse) fino a portare il bacino verso il petto, scendi lentamente senza appoggiare. Lavora soprattutto gli addominali bassi." },
+    { name: "Crunch su Panca Declinata", sets: 3, reps: "15", rest: 60, description: "Sdraiato sulla panca declinata con la testa in basso e le gambe bloccate in alto. Sali con il busto contraendo l'addome (non tirare il collo con le mani), scendi lento. Lavora soprattutto gli addominali alti." },
+  ]
+};
+
 const sessions: Session[] = [
+  {
+    id: 11, label: "Giornata 1", subtitle: "Petto · Spalle · Tricipiti", color: "#e879f9", glow: "rgba(232,121,249,0.35)", icon: "🏋️", type: "workout",
+    groups: [
+      {
+        name: "Petto, Spalle e Tricipiti", icon: "🏋️", exercises: [
+          { name: "Cavi dall'alto", sets: 4, reps: "12", rest: 90, description: "Croci ai cavi alti. Gomiti leggermente flessi e fissi, porta le maniglie verso il basso davanti a te e contrai il petto al picco." },
+          { name: "Bench Press", sets: 3, reps: "8", rest: 120, description: "Panca piana classica. Scapole retratte, scendi al petto controllato e spingi con decisione." },
+          { name: "Spinte Manubri Panca 30°", sets: 4, reps: "10", rest: 90, description: "Spinte con manubri su panca inclinata a 30°. Lavora la parte alta del petto. Scendi controllato e spingi senza battere i manubri in alto." },
+          { name: "Alzate Lat.", sets: 3, reps: "8", rest: 60, description: "(In superserie con Distensioni Manubri) Alzate laterali con manubri per il deltoide laterale. Gomiti leggermente flessi, sali fino all'altezza delle spalle." },
+          { name: "Distensioni Manubri", sets: 3, reps: "12", rest: 90, description: "(In superserie con Alzate Lat.) Distensioni con manubri sopra la testa per le spalle. Spingi su senza bloccare i gomiti, torna giù lento." },
+          { name: "French Press Manubri", sets: 4, reps: "10", rest: 90, description: "Panca, manubri sopra con braccia estese. Piega i gomiti verso le tempie tenendoli fermi, poi estendi." },
+          { name: "Tricipiti ai Cavi", sets: 2, reps: "15", rest: 60, description: "Cavo alto, gomiti ai fianchi fissi. Estendi le braccia verso il basso, torna su lentamente." },
+        ]
+      },
+      ABS_GROUP,
+    ]
+  },
+  {
+    id: 7, label: "Giornata 2", subtitle: "Gambe · Cardio", color: "#a3e635", glow: "rgba(163,230,53,0.35)", icon: "🦵", type: "workout",
+    groups: [
+      {
+        name: "Gambe", icon: "🦵", exercises: [
+          { name: "Hack Squat", sets: 3, reps: "15", rest: 120, description: "Macchina inclinata, schiena appoggiata, piedi a larghezza spalle. Scendi controllato fino a ~90° e spingi senza bloccare le ginocchia. Ottimo per quadricipiti e glutei con la schiena protetta." },
+          { name: "Affondi in camminata", sets: 3, reps: "10+10", rest: 90, description: "Manubri ai lati, passo lungo. Ginocchio posteriore verso terra, busto eretto. 10 per gamba." },
+          { name: "Leg Press Orizz. (pedana alta)", sets: 4, reps: "20-20-16-16", rest: 120, description: "Leg press orizzontale con piedi alti sulla pedana: più lavoro su glutei e femorali. Scendi fino a ~90°, spingi senza bloccare le ginocchia. Le ultime due serie (16-16) si eseguono a una gamba sola." },
+        ]
+      },
+      {
+        name: "Cardio", icon: "🚴", exercises: [
+          { name: "Cyclette", sets: 1, reps: "10 min", rest: 0, isTime: true, duration: 600, description: "10 min intensità moderata, RPM 70-90. Recupero attivo." },
+        ]
+      },
+      ABS_GROUP,
+    ]
+  },
+  {
+    id: 12, label: "Giornata 3", subtitle: "Dorso · Bicipiti", color: "#60a5fa", glow: "rgba(96,165,250,0.35)", icon: "🦾", type: "workout",
+    groups: [
+      {
+        name: "Dorso e Bicipiti", icon: "🔙", exercises: [
+          { name: "Lat Avanti", sets: 4, reps: "12", rest: 90, description: "Lat machine sbarra larga, tira al petto. Gomiti verso il pavimento, scapole abbassate." },
+          { name: "Pull Down", sets: 3, reps: "10", rest: 90, description: "Pull down ai cavi alti: braccia quasi tese, porta la barra verso le cosce contraendo il gran dorsale. Gomiti appena flessi e fermi." },
+          { name: "Row Presa Stretta", sets: 3, reps: "8", rest: 120, description: "Cavo basso presa stretta. Tira verso l'ombelico, gomiti ai fianchi, scapole al centro." },
+          { name: "Row Presa Larga", sets: 2, reps: "15", rest: 90, description: "Presa larga, gomiti verso l'esterno. Lavora deltoide posteriore e fibre superiori del dorso." },
+          { name: "Curl Scott", sets: 4, reps: "12", rest: 90, description: "Curl alla panca Scott con braccia appoggiate al cuscino. Non rilasciare completamente in basso e non ondeggiare con il busto." },
+          { name: "Curl Cavo Basso", sets: 2, reps: "15", rest: 60, description: "Cavo basso barra dritta. Gomiti fissi, fletti verso le spalle. Tensione costante anche in basso." },
+        ]
+      },
+      ABS_GROUP,
+    ]
+  },
   {
     id: 5, label: "Push", subtitle: "Petto · Spalle · Tricipiti", color: "#f97316", glow: "rgba(249,115,22,0.35)", icon: "🔱", type: "workout",
     groups: [
@@ -397,23 +456,6 @@ const sessions: Session[] = [
     ]
   },
   {
-    id: 7, label: "Gambe", subtitle: "Quadricipiti · Glutei · Cardio", color: "#a3e635", glow: "rgba(163,230,53,0.35)", icon: "🦵", type: "workout",
-    groups: [
-      {
-        name: "Gambe", icon: "🦵", exercises: [
-          { name: "Hack Squat", sets: 3, reps: "15", rest: 120, description: "Macchina inclinata, schiena appoggiata, piedi a larghezza spalle. Scendi controllato fino a ~90° e spingi senza bloccare le ginocchia. Ottimo per quadricipiti e glutei con la schiena protetta." },
-          { name: "Affondi in camminata", sets: 3, reps: "10+10", rest: 90, description: "Manubri ai lati, passo lungo. Ginocchio posteriore verso terra, busto eretto. 10 per gamba." },
-          { name: "Leg Press Orizz. (pedana alta)", sets: 4, reps: "20-20-16-16", rest: 120, description: "Leg press orizzontale con piedi alti sulla pedana: più lavoro su glutei e femorali. Scendi fino a ~90°, spingi senza bloccare le ginocchia. Le ultime due serie (16-16) si eseguono a una gamba sola." },
-        ]
-      },
-      {
-        name: "Cardio", icon: "🚴", exercises: [
-          { name: "Cyclette", sets: 1, reps: "10 min", rest: 0, isTime: true, duration: 600, description: "10 min intensità moderata, RPM 70-90. Recupero attivo." },
-        ]
-      },
-    ]
-  },
-  {
     id: 4, label: "Attività Extra", subtitle: "Gravel · Passeggiata", color: "#fbbf24", glow: "rgba(251,191,36,0.35)", icon: "🚴", type: "extra",
     activities: [
       { name: "Gravel Bike", icon: "🚵", description: "Sessione ciclismo su gravel. Avvia il timer." },
@@ -485,6 +527,20 @@ const TIPS: Record<string, Tip> = {
   "Row Presa Larga": TIP_ISO("Volume alto con carico leggero: 18 ripetute pulite e scapole ben controllate."),
   "Lat Avanti": TIP_VOLUME("Schema piramidale: aumenta il peso quando scendono le ripetute, ma mantieni sempre scapole abbassate."),
   "Curl Cavo Basso": TIP_VOLUME("Tensione costante per tutto il movimento: pausa 1 sec in alto, discesa lenta."),
+  "Spinte Manubri Panca 30°": TIP_POWER("Con i manubri la spalla lavora in un arco più naturale del bilanciere. Gomiti a ~45°, scendi fino a sentire lo stiramento del petto, non oltre."),
+  "Distensioni Manubri": TIP_VOLUME("In superserie con le alzate laterali: scegli un peso che ti permetta di arrivare a 12 pulite anche da affaticato. Non inarcare la schiena, schienale a 80-90°."),
+  "Pull Down": TIP_ISO("Braccia quasi tese e gomiti fermi: il lavoro è del dorso, non dei bicipiti. Pausa 1 sec in basso, risalita lenta."),
+  "Curl Scott": TIP_VOLUME("Non lasciar cadere il peso in basso con le braccia completamente tese: è il punto in cui il bicipite e il gomito soffrono di più. Controlla tutta la discesa."),
+  "Sollevamento Gambe su Panca Inclinata": {
+    range: "3 × 10-12 (lento, senza dondolare)",
+    load: "3 serie bastano. Gli addominali rispondono a controllo e tempo sotto tensione, non a tante serie: 2 sec in salita, 3 in discesa. Quando fai 12 pulite su tutte e 3 le serie, rendi più difficile (gambe più tese, pausa in alto, zavorra alle caviglie) invece di aggiungere serie.",
+    care: "Lombare sempre a contatto con la panca: se si stacca o senti la schiena, piega le ginocchia o riduci l'inclinazione. Non fare slanci.",
+  },
+  "Crunch su Panca Declinata": {
+    range: "3 × 12-15 (lento)",
+    load: "3 serie bastano. Sali con il busto e non con la spinta del collo; se vuoi più difficoltà tieni un disco leggero al petto invece di aggiungere serie. Una serie da 4+4 non serve: più serie di addome allungano solo l'allenamento.",
+    care: "Non tirare la testa con le mani, e non scendere fino a farti ribaltare all'indietro. Se la schiena o il collo si affaticano prima dell'addome, riduci l'inclinazione.",
+  },
   "Hack Squat": TIP_VOLUME("15 ripetute: carico moderato che ti lasci 2 ripetute di margine. Ginocchia in linea con i piedi, schiena sempre appoggiata. È la macchina più \"amica\" di schiena e ginocchia."),
   "Leg Press Orizz. (pedana alta)": {
     range: "4 serie: 20-20-16-16 (le ultime 2 a una gamba)",
@@ -1669,6 +1725,8 @@ export default function App() {
 
   const lastWorkout = history.length > 0 ? history[history.length - 1] : null;
   const lastSession = lastWorkout ? sessions.find(s => s.id === lastWorkout.sessionId) : null;
+  // Ultima sessione di palestra completata (le attività extra non contano): evidenziata nella Home
+  const lastGymId = [...history].reverse().find(w => sessions.find(s => s.id === w.sessionId)?.type === "workout")?.sessionId ?? null;
 
   const renderView = () => {
     if (view === "dashboard") {
@@ -1822,12 +1880,22 @@ export default function App() {
         <div style={S.tabs}>
           {sessions.map((s, i) => (
             <button key={s.id} style={{
-              ...S.tab,
+              ...S.tab, position: "relative" as const,
               background: activeSess?.sessionIdx === i
                 ? `linear-gradient(145deg,${s.color}25,${s.color}12)`
                 : `linear-gradient(145deg,${s.color}12,${s.color}06)`,
               borderColor: activeSess?.sessionIdx === i ? `${s.color}50` : `${s.color}25`
             }} onClick={() => openSession(i)}>
+              {s.id === lastGymId && (
+                <span style={{
+                  position: "absolute", top: 8, right: 8, display: "flex", alignItems: "center", gap: 4,
+                  fontSize: 8, fontWeight: 800, letterSpacing: "0.08em", color: s.color,
+                  background: `${s.color}22`, border: `1px solid ${s.color}55`, borderRadius: 10, padding: "2px 6px",
+                }}>
+                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: s.color, boxShadow: `0 0 6px ${s.color}` }} />
+                  ULTIMA
+                </span>
+              )}
               <span style={{ fontSize: 28, marginBottom: 4 }}>{s.icon}</span>
               <span style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>{s.label}</span>
               <span style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", textAlign: "center" as const, marginTop: 1 }}>{s.subtitle}</span>
