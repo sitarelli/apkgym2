@@ -301,6 +301,7 @@ const sessions: Session[] = [
   {
     id: 11, label: "Giornata 1", subtitle: "Petto · Spalle · Tricipiti", color: "#e879f9", glow: "rgba(232,121,249,0.35)", icon: "🏋️", type: "workout",
     groups: [
+      ABS_GROUP,
       {
         name: "Petto, Spalle e Tricipiti", icon: "🏋️", exercises: [
           { name: "Cavi dall'alto", sets: 4, reps: "12", rest: 90, description: "Croci ai cavi alti. Gomiti leggermente flessi e fissi, porta le maniglie verso il basso davanti a te e contrai il petto al picco." },
@@ -312,12 +313,28 @@ const sessions: Session[] = [
           { name: "Tricipiti ai Cavi", sets: 2, reps: "15", rest: 60, description: "Cavo alto, gomiti ai fianchi fissi. Estendi le braccia verso il basso, torna su lentamente." },
         ]
       },
-      ABS_GROUP,
     ]
   },
   {
-    id: 7, label: "Giornata 2", subtitle: "Gambe · Cardio", color: "#a3e635", glow: "rgba(163,230,53,0.35)", icon: "🦵", type: "workout",
+    id: 12, label: "Giornata 2", subtitle: "Dorso · Bicipiti", color: "#60a5fa", glow: "rgba(96,165,250,0.35)", icon: "🦾", type: "workout",
     groups: [
+      ABS_GROUP,
+      {
+        name: "Dorso e Bicipiti", icon: "🔙", exercises: [
+          { name: "Lat Avanti", sets: 4, reps: "12", rest: 90, description: "Lat machine sbarra larga, tira al petto. Gomiti verso il pavimento, scapole abbassate." },
+          { name: "Pull Down", sets: 3, reps: "10", rest: 90, description: "Pull down ai cavi alti: braccia quasi tese, porta la barra verso le cosce contraendo il gran dorsale. Gomiti appena flessi e fermi." },
+          { name: "Row Presa Stretta", sets: 3, reps: "8", rest: 120, description: "Cavo basso presa stretta. Tira verso l'ombelico, gomiti ai fianchi, scapole al centro." },
+          { name: "Row Presa Larga", sets: 2, reps: "15", rest: 90, description: "Presa larga, gomiti verso l'esterno. Lavora deltoide posteriore e fibre superiori del dorso." },
+          { name: "Curl Scott", sets: 4, reps: "12", rest: 90, description: "Curl alla panca Scott con braccia appoggiate al cuscino. Non rilasciare completamente in basso e non ondeggiare con il busto." },
+          { name: "Curl Cavo Basso", sets: 2, reps: "15", rest: 60, description: "Cavo basso barra dritta. Gomiti fissi, fletti verso le spalle. Tensione costante anche in basso." },
+        ]
+      },
+    ]
+  },
+  {
+    id: 7, label: "Giornata 3", subtitle: "Gambe · Cardio", color: "#a3e635", glow: "rgba(163,230,53,0.35)", icon: "🦵", type: "workout",
+    groups: [
+      ABS_GROUP,
       {
         name: "Gambe", icon: "🦵", exercises: [
           { name: "Hack Squat", sets: 3, reps: "15", rest: 120, description: "Macchina inclinata, schiena appoggiata, piedi a larghezza spalle. Scendi controllato fino a ~90° e spingi senza bloccare le ginocchia. Ottimo per quadricipiti e glutei con la schiena protetta." },
@@ -330,23 +347,6 @@ const sessions: Session[] = [
           { name: "Cyclette", sets: 1, reps: "10 min", rest: 0, isTime: true, duration: 600, description: "10 min intensità moderata, RPM 70-90. Recupero attivo." },
         ]
       },
-      ABS_GROUP,
-    ]
-  },
-  {
-    id: 12, label: "Giornata 3", subtitle: "Dorso · Bicipiti", color: "#60a5fa", glow: "rgba(96,165,250,0.35)", icon: "🦾", type: "workout",
-    groups: [
-      {
-        name: "Dorso e Bicipiti", icon: "🔙", exercises: [
-          { name: "Lat Avanti", sets: 4, reps: "12", rest: 90, description: "Lat machine sbarra larga, tira al petto. Gomiti verso il pavimento, scapole abbassate." },
-          { name: "Pull Down", sets: 3, reps: "10", rest: 90, description: "Pull down ai cavi alti: braccia quasi tese, porta la barra verso le cosce contraendo il gran dorsale. Gomiti appena flessi e fermi." },
-          { name: "Row Presa Stretta", sets: 3, reps: "8", rest: 120, description: "Cavo basso presa stretta. Tira verso l'ombelico, gomiti ai fianchi, scapole al centro." },
-          { name: "Row Presa Larga", sets: 2, reps: "15", rest: 90, description: "Presa larga, gomiti verso l'esterno. Lavora deltoide posteriore e fibre superiori del dorso." },
-          { name: "Curl Scott", sets: 4, reps: "12", rest: 90, description: "Curl alla panca Scott con braccia appoggiate al cuscino. Non rilasciare completamente in basso e non ondeggiare con il busto." },
-          { name: "Curl Cavo Basso", sets: 2, reps: "15", rest: 60, description: "Cavo basso barra dritta. Gomiti fissi, fletti verso le spalle. Tensione costante anche in basso." },
-        ]
-      },
-      ABS_GROUP,
     ]
   },
   {
